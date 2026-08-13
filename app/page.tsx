@@ -32,6 +32,7 @@ const ONE_ANSWER_PROMPTS = [
 ];
 
 const COLORS = ["#ff6b5e", "#f3b43f", "#55c7a6", "#6f86ff", "#d36bec", "#ff8d4d"];
+const GAME_VERSION = "2026.08.12.4";
 const clean = (value: string, max = 80) => value.replace(/[<>]/g, "").trim().slice(0, max);
 const makeRoom = () => Array.from({ length: 6 }, () => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 32)]).join("");
 const peerId = (room: string) => `amen-party-${room.toLowerCase()}`;
@@ -97,6 +98,10 @@ export default function Home() {
   function handleHostMessage(conn: PeerConnection, msg: any) {
     const current = stateRef.current;
     if (msg.type === "join") {
+      if (msg.version !== GAME_VERSION) {
+        conn.send({ type: "version-error", message: "This game was updated. Refresh this page, then join again." });
+        return;
+      }
       const playerName = clean(msg.name, 18);
       if (!playerName) return;
       const exists = current.players.some(p => p.id === msg.playerId);
@@ -114,7 +119,8 @@ export default function Home() {
       if (new Set(next.answers.map(a => a.playerId)).size === next.players.length && next.players.length > 1) setTimeout(() => beginVote(next), 500);
       return;
     }
-    if (msg.type === "vote" && current.phase === "vote" && current.answers.some(a => a.id === msg.choice && a.question === current.activeQuestion && a.playerId !== msg.playerId)) {
+    const mayVoteForChoice = current.answers.some(a => a.id === msg.choice && a.question === current.activeQuestion && (current.players.length === 2 || a.playerId !== msg.playerId));
+    if (msg.type === "vote" && current.phase === "vote" && mayVoteForChoice) {
       const key = `${msg.playerId}:${current.round}:${current.activeQuestion}`;
       if ((current.votes as any)[key]) return;
       const next = { ...current, votes: { ...current.votes, [key]: msg.choice } }; broadcast(next);
@@ -131,11 +137,12 @@ export default function Home() {
       const peer = new window.Peer(); peerRef.current = peer;
       peer.on("open", () => {
         const conn = peer.connect(peerId(room));
-        conn.on("open", () => { connections.current.set("host", conn); conn.send({ type: "join", playerId: playerId.current, name: playerName }); setMode("player"); setStatus(""); });
+        conn.on("open", () => { connections.current.set("host", conn); conn.send({ type: "join", playerId: playerId.current, name: playerName, version: GAME_VERSION }); setMode("player"); setStatus(""); });
         conn.on("data", (msg: any) => {
           if (msg.type === "state") { setState(msg.state); setSubmitted(msg.state.answers.some((a: Answer) => a.playerId === playerId.current)); setVoted(Boolean(msg.state.votes[`${playerId.current}:${msg.state.round}:${msg.state.activeQuestion}`])); }
           if (msg.type === "answer-accepted") { setSubmitted(true); setStatus(""); }
           if (msg.type === "answer-error") { setSubmitted(false); setStatus(msg.message); }
+          if (msg.type === "version-error") { setMode(null); setScreen("join"); setStatus(msg.message); conn.close(); }
         });
         conn.on("close", () => setStatus("The host ended the room."));
         setTimeout(() => { if (!conn.open) setStatus("Room not found. Check the code and try again."); }, 7000);
@@ -204,7 +211,7 @@ function PlayerView({ state, me, answers, setAnswers, submitted, voted, onAnswer
   return <main className="phone"><header><div className="brand"><span className="spark">✦</span> GOOD WORD</div><span>{myName}</span></header>
     {state.phase === "lobby" && <section><div className="bigIcon">✓</div><h2>You’re in!</h2><p>Look up at the host screen. The game will begin soon.</p><div className="miniPlayers">{state.players.map(p => <span key={p.id}>{p.name}</span>)}</div></section>}
     {state.phase === "prompt" && <section><div className="eyebrow">ROUND {state.round} · ANSWER BOTH</div><Countdown deadline={state.deadline} />{submitted ? <><div className="bigIcon">✦</div><h3>Both answers sent!</h3><p>Now prepare to defend your comedy honor.</p></> : <>{state.prompts.map((prompt,i)=><div className="phonePrompt" key={i}><span>QUESTION {i+1}</span><h3>{prompt}</h3><textarea autoFocus={i===0} maxLength={100} value={answers[i]} onChange={e => { const next=[...answers]; next[i]=e.target.value; setAnswers(next); }} placeholder="Type something funny…"/><div className="count">{answers[i].length}/100</div></div>)}<button className="primary" disabled={answers.slice(0,2).some(a=>!a.trim())} onClick={onAnswer}>SEND BOTH <span>→</span></button></>}</section>}
-    {state.phase === "vote" && <section className="phoneVote"><div className="voteNow">VOTE NOW!</div><div className="eyebrow">QUESTION {state.activeQuestion + 1}</div><h2>{state.prompts[state.activeQuestion]}</h2>{voted ? <><div className="bigIcon">✓</div><h3>Vote locked!</h3><p>Watch the host screen for the winner.</p></> : <div className="voteList">{state.answers.filter(a=>a.question===state.activeQuestion).map(a => <button disabled={a.playerId===me} className={a.playerId===me?"ownAnswer":""} key={a.id} onClick={()=>onVote(a.id)}>{a.text}{a.playerId===me&&<small>YOUR ANSWER</small>}</button>)}</div>}</section>}
+    {state.phase === "vote" && <section className="phoneVote"><div className="voteNow">VOTE NOW!</div><div className="eyebrow">QUESTION {state.activeQuestion + 1}</div><h2>{state.prompts[state.activeQuestion]}</h2>{voted ? <><div className="bigIcon">✓</div><h3>Vote locked!</h3><p>Watch the host screen for the winner.</p></> : <div className="voteList">{state.answers.filter(a=>a.question===state.activeQuestion).map(a => { const own = a.playerId===me; const disabled = own && state.players.length > 2; return <button disabled={disabled} className={disabled?"ownAnswer":""} key={a.id} onClick={()=>onVote(a.id)}>{a.text}{own&&<small>{disabled?"YOUR ANSWER":"YOUR ANSWER · VOTING ALLOWED WITH 2 PLAYERS"}</small>}</button>; })}</div>}</section>}
     {(state.phase === "reveal" || state.phase === "scores" || state.phase === "final") && <section><div className="bigIcon">✦</div><h2>{state.phase === "final" ? "Amen to that!" : state.phase === "scores" ? "Score check!" : "Results are in"}</h2><p>Look up at the host screen.</p><div className="myScore">YOUR SCORE <b>{state.players.find(p=>p.id===me)?.score || 0}</b></div></section>}
     {status && <p className="status">{status}</p>}
   </main>;
