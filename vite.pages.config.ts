@@ -8,5 +8,12 @@ export default defineConfig({
   build: {
     outDir: "../pages-dist",
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        entryFileNames: "assets/game.js",
+        chunkFileNames: "assets/[name].js",
+        assetFileNames: (assetInfo) => assetInfo.names?.some((name) => name.endsWith(".css")) ? "assets/game.css" : "assets/[name][extname]",
+      },
+    },
   },
 });
