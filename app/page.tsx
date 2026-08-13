@@ -73,7 +73,7 @@ const ONE_ANSWER_PROMPTS = [
 
 const COLORS = ["#ff6b5e", "#f3b43f", "#55c7a6", "#6f86ff", "#d36bec", "#ff8d4d"];
 const BIBLE_BADGES = ["🛶", "🐑", "🐟", "🕊️", "🌈", "⭐", "🪨", "🏺"];
-const GAME_VERSION = "2026.08.12.7";
+const GAME_VERSION = "2026.08.12.8";
 const clean = (value: string, max = 80) => value.replace(/[<>]/g, "").trim().slice(0, max);
 const makeRoom = () => Array.from({ length: 6 }, () => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 32)]).join("");
 const peerId = (room: string) => `amen-party-${room.toLowerCase()}`;
@@ -112,6 +112,11 @@ export default function Home() {
     const timer = window.setTimeout(() => beginVote(stateRef.current), Math.max(0, state.deadline - Date.now()));
     return () => window.clearTimeout(timer);
   }, [mode, state.phase, state.deadline]);
+  useEffect(() => {
+    if (mode !== "host" || state.phase !== "vote" || !state.deadline) return;
+    const timer = window.setTimeout(() => reveal(stateRef.current), Math.max(0, state.deadline - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [mode, state.phase, state.deadline]);
   useEffect(() => () => peerRef.current?.destroy(), []);
 
   const broadcast = (next: GameState) => {
@@ -128,13 +133,14 @@ export default function Home() {
       const peer = new window.Peer(peerId(room)); peerRef.current = peer;
       peer.on("open", () => {
         setMode("host"); setStatus("");
-        setState({ phase: "lobby", room, players: [], round: 0, prompts: [], questionCount: 2, activeQuestion: 0, answers: [], votes: {} });
+        const lobby: GameState = { phase: "lobby", room, players: [], round: 0, prompts: [], questionCount: 2, activeQuestion: 0, answers: [], votes: {} };
+        stateRef.current = lobby;
+        setState(lobby);
       });
       peer.on("connection", (conn: PeerConnection) => {
-        connections.current.set(conn.peer, conn);
         conn.on("open", () => conn.send({ type: "state", state: stateRef.current }));
         conn.on("data", (raw: any) => handleHostMessage(conn, raw));
-        conn.on("close", () => connections.current.delete(conn.peer));
+        conn.on("close", () => connections.current.forEach((saved, key) => { if (saved === conn) connections.current.delete(key); }));
       });
       peer.on("error", () => setStatus("That room could not open. Please try again."));
     } catch { setStatus("Multiplayer could not start. Check your connection and try again."); }
@@ -143,10 +149,6 @@ export default function Home() {
   function handleHostMessage(conn: PeerConnection, msg: any) {
     const current = stateRef.current;
     if (msg.type === "join") {
-      if (msg.version !== GAME_VERSION) {
-        conn.send({ type: "version-error", message: "This game was updated. Refresh this page, then join again." });
-        return;
-      }
       const playerName = clean(msg.name, 18);
       if (!playerName) return;
       const exists = current.players.some(p => p.id === msg.playerId);
@@ -187,7 +189,6 @@ export default function Home() {
           if (msg.type === "state") { setState(msg.state); setSubmitted(msg.state.answers.some((a: Answer) => a.playerId === playerId.current)); setVoted(Boolean(msg.state.votes[`${playerId.current}:${msg.state.round}:${msg.state.activeQuestion}`])); }
           if (msg.type === "answer-accepted") { setSubmitted(true); setStatus(""); }
           if (msg.type === "answer-error") { setSubmitted(false); setStatus(msg.message); }
-          if (msg.type === "version-error") { setMode(null); setScreen("join"); setStatus(msg.message); conn.close(); }
         });
         conn.on("close", () => setStatus("The host ended the room."));
         setTimeout(() => { if (!conn.open) setStatus("Room not found. Check the code and try again."); }, 7000);
@@ -207,7 +208,7 @@ export default function Home() {
   }
   function beginVote(source = stateRef.current) {
     if (source.phase !== "prompt") return;
-    if (source.answers.length < 2) { broadcast({ ...source, phase: "reveal" }); return; }
+    if (new Set(source.answers.map(a => a.playerId)).size < 2) { broadcast({ ...source, phase: "scores" }); return; }
     broadcast({ ...source, phase: "vote", activeQuestion: 0, votes: {}, deadline: Date.now() + 45000 });
   }
   function reveal(source = stateRef.current) {
