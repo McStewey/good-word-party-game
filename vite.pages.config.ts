@@ -1,10 +1,23 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+const release = "20260812-7";
+
 export default defineConfig({
   root: "pages",
   base: "/good-word-party-game/",
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: "release-cache-buster",
+      enforce: "post",
+      transformIndexHtml(html) {
+        return html
+          .replace("/assets/game.js", `/assets/game.js?v=${release}`)
+          .replace("/assets/game.css", `/assets/game.css?v=${release}`);
+      },
+    },
+  ],
   build: {
     outDir: "../pages-dist",
     emptyOutDir: true,
