@@ -3,15 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 
 type Player = { id: string; name: string; score: number };
-type Answer = { playerId: string; name: string; text: string };
+type Answer = { id: string; playerId: string; name: string; text: string };
 type Phase = "home" | "lobby" | "prompt" | "vote" | "reveal" | "final";
-type GameState = { phase: Phase; room: string; players: Player[]; round: number; prompt: string; answers: Answer[]; votes: Record<string, number>; deadline?: number };
+type GameState = { phase: Phase; room: string; players: Player[]; round: number; prompt: string; answerCount: 1 | 2; answers: Answer[]; votes: Record<string, string>; deadline?: number };
 type PeerConnection = { peer: string; open: boolean; send: (data: unknown) => void; on: (event: string, cb: (data?: any) => void) => void; close: () => void };
 type PeerInstance = { id: string; on: (event: string, cb: (data?: any) => void) => void; connect: (id: string) => PeerConnection; destroy: () => void };
 
 declare global { interface Window { Peer: new (id?: string, options?: Record<string, unknown>) => PeerInstance } }
 
-const PROMPTS = [
+const ONE_ANSWER_PROMPTS = [
   "Noah’s funniest announcement on the ark: ____.",
   "A silly name for a Christian coffee shop: ____.",
   "The unofficial 11th commandment: Thou shalt not ____.",
@@ -29,6 +29,15 @@ const PROMPTS = [
   "On the eighth day, everyone took time for ____.",
   "A church sign that would make everyone smile: ____.",
   "The name of Moses’ wilderness travel agency: ____.",
+];
+
+const TWO_ANSWER_PROMPTS = [
+  "Name two things Noah forgot to pack: ____ and ____.",
+  "Complete the church potluck combo: ____ with a side of ____.",
+  "Give the disciples a band name and a hit song: ____ / ____.",
+  "Name a new Sunday school mascot and its catchphrase: ____ / ____.",
+  "Moses opened a restaurant. Name it and its special: ____ / ____.",
+  "Invent a Bible-times game show and its grand prize: ____ / ____.",
 ];
 
 const COLORS = ["#ff6b5e", "#f3b43f", "#55c7a6", "#6f86ff", "#d36bec", "#ff8d4d"];
@@ -55,15 +64,21 @@ export default function Home() {
   const [roomInput, setRoomInput] = useState("");
   const [name, setName] = useState("");
   const [status, setStatus] = useState("");
-  const [answer, setAnswer] = useState("");
+  const [answers, setAnswers] = useState(["", ""]);
   const [submitted, setSubmitted] = useState(false);
   const [voted, setVoted] = useState(false);
-  const [state, setState] = useState<GameState>({ phase: "home", room: "", players: [], round: 0, prompt: "", answers: [], votes: {} });
+  const [state, setState] = useState<GameState>({ phase: "home", room: "", players: [], round: 0, prompt: "", answerCount: 1, answers: [], votes: {} });
   const peerRef = useRef<PeerInstance | null>(null);
   const connections = useRef<Map<string, PeerConnection>>(new Map());
   const stateRef = useRef(state);
   const playerId = useRef(crypto.randomUUID());
   useEffect(() => { stateRef.current = state; }, [state]);
+  useEffect(() => { if (state.phase === "prompt") { setAnswers(["", ""]); setSubmitted(false); setStatus(""); } }, [state.round]);
+  useEffect(() => {
+    if (mode !== "host" || state.phase !== "prompt" || !state.deadline) return;
+    const timer = window.setTimeout(() => beginVote(stateRef.current), Math.max(0, state.deadline - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [mode, state.phase, state.deadline]);
   useEffect(() => () => peerRef.current?.destroy(), []);
 
   const broadcast = (next: GameState) => { setState(next); connections.current.forEach(c => c.open && c.send({ type: "state", state: next })); };
@@ -76,7 +91,7 @@ export default function Home() {
       const peer = new window.Peer(peerId(room)); peerRef.current = peer;
       peer.on("open", () => {
         setMode("host"); setStatus("");
-        setState({ phase: "lobby", room, players: [], round: 0, prompt: "", answers: [], votes: {} });
+        setState({ phase: "lobby", room, players: [], round: 0, prompt: "", answerCount: 1, answers: [], votes: {} });
       });
       peer.on("connection", (conn: PeerConnection) => {
         connections.current.set(conn.peer, conn);
@@ -99,12 +114,16 @@ export default function Home() {
     }
     if (msg.type === "answer" && current.phase === "prompt" && !current.answers.some(a => a.playerId === msg.playerId)) {
       const p = current.players.find(x => x.id === msg.playerId); if (!p) return;
-      const next = { ...current, answers: [...current.answers, { playerId: p.id, name: p.name, text: clean(msg.text, 100) || "(passed)" }] };
+      const texts = (Array.isArray(msg.texts) ? msg.texts : [msg.text]).slice(0, current.answerCount).map((text: unknown) => clean(String(text || ""), 100)).filter(Boolean);
+      if (texts.length !== current.answerCount) { conn.send({ type: "answer-error", message: "Please complete every answer." }); return; }
+      const received = texts.map((text: string, index: number) => ({ id: `${p.id}-${current.round}-${index}`, playerId: p.id, name: p.name, text }));
+      const next = { ...current, answers: [...current.answers, ...received] };
       broadcast(next);
-      if (next.answers.length === next.players.length && next.players.length > 1) setTimeout(() => beginVote(next), 500);
+      conn.send({ type: "answer-accepted", round: current.round });
+      if (new Set(next.answers.map(a => a.playerId)).size === next.players.length && next.players.length > 1) setTimeout(() => beginVote(next), 500);
       return;
     }
-    if (msg.type === "vote" && current.phase === "vote" && current.answers.some(a => a.playerId === msg.choice) && msg.choice !== msg.playerId) {
+    if (msg.type === "vote" && current.phase === "vote" && current.answers.some(a => a.id === msg.choice && a.playerId !== msg.playerId)) {
       const key = `${msg.playerId}:${current.round}`;
       if ((current.votes as any)[key]) return;
       const next = { ...current, votes: { ...current.votes, [key]: msg.choice } }; broadcast(next);
@@ -122,7 +141,11 @@ export default function Home() {
       peer.on("open", () => {
         const conn = peer.connect(peerId(room));
         conn.on("open", () => { connections.current.set("host", conn); conn.send({ type: "join", playerId: playerId.current, name: playerName }); setMode("player"); setStatus(""); });
-        conn.on("data", (msg: any) => { if (msg.type === "state") { setState(msg.state); setSubmitted(msg.state.answers.some((a: Answer) => a.playerId === playerId.current)); setVoted(Object.keys(msg.state.votes).some(k => k.startsWith(playerId.current))); } });
+        conn.on("data", (msg: any) => {
+          if (msg.type === "state") { setState(msg.state); setSubmitted(msg.state.answers.some((a: Answer) => a.playerId === playerId.current)); setVoted(Object.keys(msg.state.votes).some(k => k.startsWith(playerId.current))); }
+          if (msg.type === "answer-accepted") { setSubmitted(true); setStatus(""); }
+          if (msg.type === "answer-error") { setSubmitted(false); setStatus(msg.message); }
+        });
         conn.on("close", () => setStatus("The host ended the room."));
         setTimeout(() => { if (!conn.open) setStatus("Room not found. Check the code and try again."); }, 7000);
       });
@@ -132,22 +155,28 @@ export default function Home() {
   function startRound() {
     if (state.players.length < 2) { setStatus("Invite at least 2 players to start."); return; }
     setStatus("");
-    const prompt = PROMPTS[(state.round * 5 + Math.floor(Math.random() * PROMPTS.length)) % PROMPTS.length];
-    broadcast({ ...state, phase: "prompt", round: state.round + 1, prompt, answers: [], votes: {}, deadline: Date.now() + 70000 });
+    const answerCount: 1 | 2 = state.round === 1 ? 2 : 1;
+    const pool = answerCount === 2 ? TWO_ANSWER_PROMPTS : ONE_ANSWER_PROMPTS;
+    const prompt = pool[(state.round * 5 + Math.floor(Math.random() * pool.length)) % pool.length];
+    broadcast({ ...state, phase: "prompt", round: state.round + 1, prompt, answerCount, answers: [], votes: {}, deadline: Date.now() + (answerCount === 2 ? 60000 : 45000) });
   }
-  function beginVote(source = stateRef.current) { if (source.answers.length < 2) return; broadcast({ ...source, phase: "vote", votes: {}, deadline: Date.now() + 50000 }); }
+  function beginVote(source = stateRef.current) {
+    if (source.phase !== "prompt") return;
+    if (source.answers.length < 2) { broadcast({ ...source, phase: "reveal" }); return; }
+    broadcast({ ...source, phase: "vote", votes: {}, deadline: Date.now() + 45000 });
+  }
   function reveal(source = stateRef.current) {
     const counts: Record<string, number> = {}; Object.values(source.votes).forEach(id => counts[id] = (counts[id] || 0) + 1);
-    const players = source.players.map(p => ({ ...p, score: p.score + (counts[p.id] || 0) * 100 + ((counts[p.id] || 0) === source.players.length - 1 ? 200 : 0) }));
+    const players = source.players.map(p => { const points = source.answers.filter(a => a.playerId === p.id).reduce((sum, a) => sum + (counts[a.id] || 0) * 100, 0); return { ...p, score: p.score + points }; });
     broadcast({ ...source, phase: "reveal", players });
   }
   function nextRound() { state.round >= 3 ? broadcast({ ...state, phase: "final" }) : startRound(); }
-  function submitAnswer() { const conn = connections.current.get("host"); if (!conn || !answer.trim()) return; conn.send({ type: "answer", playerId: playerId.current, text: answer }); setSubmitted(true); }
-  function submitVote(choice: string) { const conn = connections.current.get("host"); if (!conn || voted || choice === playerId.current) return; conn.send({ type: "vote", playerId: playerId.current, choice }); setVoted(true); }
+  function submitAnswer() { const conn = connections.current.get("host"); const required = answers.slice(0, state.answerCount); if (!conn?.open || required.some(a => !a.trim())) { setStatus("Please complete every answer."); return; } setStatus("Sending answer…"); conn.send({ type: "answer", playerId: playerId.current, texts: required }); }
+  function submitVote(choice: string) { const conn = connections.current.get("host"); if (!conn?.open || voted) return; conn.send({ type: "vote", playerId: playerId.current, choice }); setVoted(true); }
 
   const sortedPlayers = [...state.players].sort((a,b) => b.score - a.score);
   if (mode === "host") return <HostView state={state} players={sortedPlayers} status={status} onStart={startRound} onVote={beginVote} onReveal={() => reveal()} onNext={nextRound} />;
-  if (mode === "player") return <PlayerView state={state} me={playerId.current} answer={answer} setAnswer={setAnswer} submitted={submitted} voted={voted} onAnswer={submitAnswer} onVote={submitVote} status={status} />;
+  if (mode === "player") return <PlayerView state={state} me={playerId.current} answers={answers} setAnswers={setAnswers} submitted={submitted} voted={voted} onAnswer={submitAnswer} onVote={submitVote} status={status} />;
 
   return <main className="landing">
     <nav><div className="brand"><span className="spark">✦</span> GOOD WORD</div><div className="tag">A party game for good people</div></nav>
@@ -167,20 +196,26 @@ export default function Home() {
 function HostView({ state, players, status, onStart, onVote, onReveal, onNext }: { state: GameState; players: Player[]; status: string; onStart: () => void; onVote: () => void; onReveal: () => void; onNext: () => void }) {
   return <main className="game host"><header className="gameHeader"><div className="brand"><span className="spark">✦</span> GOOD WORD</div><div className="roomPill">JOIN AT THIS SITE · CODE <b>{state.room}</b></div></header>
     {state.phase === "lobby" && <section className="center"><div className="eyebrow">THE FLOCK IS GATHERING</div><h2>Room <em>{state.room}</em></h2><p>Players join with the room code and their name.</p><div className="playerGrid">{players.map((p,i) => <div className="playerChip" key={p.id} style={{"--chip":COLORS[i%COLORS.length]} as React.CSSProperties}>{p.name}</div>)}{players.length === 0 && <div className="waiting">Waiting for the first player…</div>}</div><button className="primary" onClick={onStart}>START GAME <span>→</span></button>{status && <p className="status">{status}</p>}</section>}
-    {state.phase === "prompt" && <section className="center round"><div className="eyebrow">ROUND {state.round} OF 3</div><h2>{state.prompt}</h2><p>{state.answers.length} of {state.players.length} answers are in</p><div className="progress"><i style={{width:`${state.players.length ? state.answers.length/state.players.length*100 : 0}%`}} /></div><button className="secondary light" disabled={state.answers.length < 2} onClick={onVote}>CLOSE ANSWERS</button></section>}
-    {state.phase === "vote" && <section className="center round"><div className="eyebrow">VOTE FOR THE FUNNIEST</div><h2>{state.prompt}</h2><div className="answerGrid">{state.answers.map(a => <div className="answerCard" key={a.playerId}>{a.text}</div>)}</div><p>{Object.keys(state.votes).length} of {state.players.length} votes are in</p><button className="secondary light" onClick={onReveal}>REVEAL RESULTS</button></section>}
-    {state.phase === "reveal" && <section className="center round"><div className="eyebrow">AND THE GOOD WORD GOES TO…</div><h2>{state.prompt}</h2><div className="answerGrid">{state.answers.sort((a,b) => Object.values(state.votes).filter(x=>x===b.playerId).length-Object.values(state.votes).filter(x=>x===a.playerId).length).map(a => <div className="answerCard result" key={a.playerId}><p>{a.text}</p><span>{a.name}</span><b>{Object.values(state.votes).filter(x=>x===a.playerId).length * 100} pts</b></div>)}</div><button className="primary" onClick={onNext}>{state.round >= 3 ? "FINAL SCORES" : "NEXT ROUND"} <span>→</span></button></section>}
+    {state.phase === "prompt" && <section className="center round"><div className="eyebrow">ROUND {state.round} OF 3 · {state.answerCount === 2 ? "TWO ANSWERS" : "ONE ANSWER"}</div><Countdown deadline={state.deadline} /><h2>{state.prompt}</h2><p>{new Set(state.answers.map(a => a.playerId)).size} of {state.players.length} players answered</p><div className="progress"><i style={{width:`${state.players.length ? new Set(state.answers.map(a => a.playerId)).size/state.players.length*100 : 0}%`}} /></div><button className="secondary light" disabled={state.answers.length < 2} onClick={onVote}>CLOSE ANSWERS</button></section>}
+    {state.phase === "vote" && <section className="center round"><div className="eyebrow">VOTE FOR THE FUNNIEST</div><h2>{state.prompt}</h2><div className="answerGrid">{state.answers.map(a => <div className="answerCard" key={a.id}>{a.text}</div>)}</div><p>{Object.keys(state.votes).length} of {state.players.length} votes are in</p><button className="secondary light" onClick={onReveal}>REVEAL RESULTS</button></section>}
+    {state.phase === "reveal" && <section className="center round"><div className="eyebrow">AND THE GOOD WORD GOES TO…</div><h2>{state.prompt}</h2>{state.answers.length < 2 ? <p>Not enough answers this round. Let’s try the next one!</p> : <div className="answerGrid">{[...state.answers].sort((a,b) => Object.values(state.votes).filter(x=>x===b.id).length-Object.values(state.votes).filter(x=>x===a.id).length).map(a => <div className="answerCard result" key={a.id}><p>{a.text}</p><span>{a.name}</span><b>{Object.values(state.votes).filter(x=>x===a.id).length * 100} pts</b></div>)}</div>}<button className="primary" onClick={onNext}>{state.round >= 3 ? "FINAL SCORES" : "NEXT ROUND"} <span>→</span></button></section>}
     {state.phase === "final" && <section className="center"><div className="eyebrow">THAT’S A WRAP</div><h2>Tonight’s <em>Good Word</em></h2><div className="leaderboard">{players.map((p,i) => <div key={p.id}><span>{i+1}</span><b>{p.name}</b><strong>{p.score}</strong></div>)}</div><button className="primary" onClick={() => location.reload()}>PLAY AGAIN <span>↻</span></button></section>}
   </main>;
 }
 
-function PlayerView({ state, me, answer, setAnswer, submitted, voted, onAnswer, onVote, status }: { state: GameState; me: string; answer: string; setAnswer: (s:string)=>void; submitted:boolean; voted:boolean; onAnswer:()=>void; onVote:(id:string)=>void; status:string }) {
+function PlayerView({ state, me, answers, setAnswers, submitted, voted, onAnswer, onVote, status }: { state: GameState; me: string; answers: string[]; setAnswers: (s:string[])=>void; submitted:boolean; voted:boolean; onAnswer:()=>void; onVote:(id:string)=>void; status:string }) {
   const myName = state.players.find(p => p.id === me)?.name || "Player";
   return <main className="phone"><header><div className="brand"><span className="spark">✦</span> GOOD WORD</div><span>{myName}</span></header>
     {state.phase === "lobby" && <section><div className="bigIcon">✓</div><h2>You’re in!</h2><p>Look up at the host screen. The game will begin soon.</p><div className="miniPlayers">{state.players.map(p => <span key={p.id}>{p.name}</span>)}</div></section>}
-    {state.phase === "prompt" && <section><div className="eyebrow">ROUND {state.round}</div><h2>{state.prompt}</h2>{submitted ? <><div className="bigIcon">✦</div><h3>Answer sent!</h3><p>Take a breath. Try not to explain the joke.</p></> : <><textarea autoFocus maxLength={100} value={answer} onChange={e => setAnswer(e.target.value)} placeholder="Type something funny…"/><div className="count">{answer.length}/100</div><button className="primary" disabled={!answer.trim()} onClick={onAnswer}>SEND IT <span>→</span></button></>}</section>}
-    {state.phase === "vote" && <section><div className="eyebrow">PICK YOUR FAVORITE</div><h2>Vote for the best answer</h2>{voted ? <><div className="bigIcon">✓</div><h3>Vote locked!</h3></> : <div className="voteList">{state.answers.filter(a=>a.playerId!==me).map(a => <button key={a.playerId} onClick={()=>onVote(a.playerId)}>{a.text}</button>)}</div>}</section>}
+    {state.phase === "prompt" && <section><div className="eyebrow">ROUND {state.round} · {state.answerCount === 2 ? "TWO ANSWERS" : "ONE ANSWER"}</div><Countdown deadline={state.deadline} /><h2>{state.prompt}</h2>{submitted ? <><div className="bigIcon">✦</div><h3>Answer sent!</h3><p>Take a breath. Try not to explain the joke.</p></> : <>{Array.from({length:state.answerCount},(_,i)=><div key={i}><textarea autoFocus={i===0} maxLength={100} value={answers[i]} onChange={e => { const next=[...answers]; next[i]=e.target.value; setAnswers(next); }} placeholder={`Answer ${i+1}…`}/><div className="count">{answers[i].length}/100</div></div>)}<button className="primary" disabled={answers.slice(0,state.answerCount).some(a=>!a.trim())} onClick={onAnswer}>SEND {state.answerCount === 2 ? "BOTH" : "IT"} <span>→</span></button></>}</section>}
+    {state.phase === "vote" && <section><div className="eyebrow">PICK YOUR FAVORITE</div><h2>Vote for the best answer</h2>{voted ? <><div className="bigIcon">✓</div><h3>Vote locked!</h3></> : <div className="voteList">{state.answers.filter(a=>a.playerId!==me).map(a => <button key={a.id} onClick={()=>onVote(a.id)}>{a.text}</button>)}</div>}</section>}
     {(state.phase === "reveal" || state.phase === "final") && <section><div className="bigIcon">✦</div><h2>{state.phase === "final" ? "Amen to that!" : "Results are in"}</h2><p>Look up at the host screen for the big reveal.</p><div className="myScore">YOUR SCORE <b>{state.players.find(p=>p.id===me)?.score || 0}</b></div></section>}
     {status && <p className="status">{status}</p>}
   </main>;
+}
+
+function Countdown({ deadline }: { deadline?: number }) {
+  const [seconds, setSeconds] = useState(() => Math.max(0, Math.ceil(((deadline || Date.now()) - Date.now()) / 1000)));
+  useEffect(() => { const tick = () => setSeconds(Math.max(0, Math.ceil(((deadline || Date.now()) - Date.now()) / 1000))); tick(); const timer = window.setInterval(tick, 250); return () => window.clearInterval(timer); }, [deadline]);
+  return <div className={`timer ${seconds <= 10 ? "urgent" : ""}`} aria-live="polite">{seconds}</div>;
 }
