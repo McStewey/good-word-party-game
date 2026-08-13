@@ -30,11 +30,11 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: pnpm build
+      - run: pnpm exec vite build --config vite.pages.config.ts
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist/client
+          path: pages-dist
       - name: Publish
         id: deployment
         uses: actions/deploy-pages@v4
