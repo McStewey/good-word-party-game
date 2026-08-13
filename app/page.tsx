@@ -228,7 +228,7 @@ export default function Home() {
   function submitVote(choice: string) { const conn = connections.current.get("host"); if (!conn?.open || voted) return; conn.send({ type: "vote", playerId: playerId.current, choice }); setVoted(true); }
 
   const sortedPlayers = [...state.players].sort((a,b) => b.score - a.score);
-  if (mode === "host") return <HostView state={state} players={sortedPlayers} status={status} onStart={startRound} onVote={beginVote} onReveal={() => reveal()} onNext={nextRound} onContinue={continueAfterScores} />;
+  if (mode === "host") return <HostView state={state} players={sortedPlayers} status={status} onStart={() => startRound()} onVote={beginVote} onNext={nextRound} onContinue={continueAfterScores} />;
   if (mode === "player") return <PlayerView state={state} me={playerId.current} answers={answers} setAnswers={setAnswers} submitted={submitted} voted={voted} onAnswer={submitAnswer} onVote={submitVote} status={status} />;
 
   return <main className="landing">
@@ -246,7 +246,7 @@ export default function Home() {
   </main>;
 }
 
-function HostView({ state, players, status, onStart, onVote, onNext, onContinue }: { state: GameState; players: Player[]; status: string; onStart: () => void; onVote: () => void; onReveal: () => void; onNext: () => void; onContinue: () => void }) {
+function HostView({ state, players, status, onStart, onVote, onNext, onContinue }: { state: GameState; players: Player[]; status: string; onStart: () => void; onVote: () => void; onNext: () => void; onContinue: () => void }) {
   return <main className="game host"><header className="gameHeader"><div className="brand"><span className="spark">✦</span> GOOD WORD</div><div className="roomPill">JOIN AT THIS SITE · CODE <b>{state.room}</b></div></header>
     {state.phase === "lobby" && <section className="center"><div className="eyebrow">THE FLOCK IS GATHERING</div><h2>Room <em>{state.room}</em></h2><p>Players join with the room code and their name.</p><div className="playerGrid">{players.map((p,i) => <div className="playerChip" key={p.id} style={{"--chip":COLORS[i%COLORS.length]} as React.CSSProperties}><i>{BIBLE_BADGES[i%BIBLE_BADGES.length]}</i>{p.name}</div>)}{players.length === 0 && <div className="waiting">Waiting for the first player…</div>}</div><button className="primary" onClick={onStart}>START GAME <span>→</span></button>{status && <p className="status">{status}</p>}</section>}
     {state.phase === "prompt" && <section className="center round"><div className="eyebrow">ROUND {state.round} OF 3 · {state.questionCount === 1 ? "ONE QUESTION · 45 SECONDS" : "TWO QUESTIONS · 60 SECONDS"}</div><Countdown deadline={state.deadline} /><div className={`promptPair ${state.questionCount === 1 ? "single" : ""}`}>{state.prompts.map((prompt,i)=><div key={prompt}><span>QUESTION {i+1}</span><h3>{prompt}</h3></div>)}</div><p>{new Set(state.answers.map(a => a.playerId)).size} of {state.players.length} players answered</p><div className="progress"><i style={{width:`${state.players.length ? new Set(state.answers.map(a => a.playerId)).size/state.players.length*100 : 0}%`}} /></div><button className="secondary light" disabled={state.answers.length < 2} onClick={() => onVote()}>START VOTING</button></section>}
