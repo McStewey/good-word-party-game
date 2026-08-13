@@ -32,7 +32,7 @@ const ONE_ANSWER_PROMPTS = [
 ];
 
 const COLORS = ["#ff6b5e", "#f3b43f", "#55c7a6", "#6f86ff", "#d36bec", "#ff8d4d"];
-const GAME_VERSION = "2026.08.12.4";
+const GAME_VERSION = "2026.08.12.5";
 const clean = (value: string, max = 80) => value.replace(/[<>]/g, "").trim().slice(0, max);
 const makeRoom = () => Array.from({ length: 6 }, () => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 32)]).join("");
 const peerId = (room: string) => `amen-party-${room.toLowerCase()}`;
@@ -73,7 +73,11 @@ export default function Home() {
   }, [mode, state.phase, state.deadline]);
   useEffect(() => () => peerRef.current?.destroy(), []);
 
-  const broadcast = (next: GameState) => { setState(next); connections.current.forEach(c => c.open && c.send({ type: "state", state: next })); };
+  const broadcast = (next: GameState) => {
+    stateRef.current = next;
+    setState(next);
+    connections.current.forEach(c => c.open && c.send({ type: "state", state: next }));
+  };
 
   async function hostGame() {
     setStatus("Opening a room…");
@@ -150,13 +154,13 @@ export default function Home() {
     } catch { setStatus("Could not connect. Check your internet and try again."); }
   }
 
-  function startRound() {
-    if (state.players.length < 2) { setStatus("Invite at least 2 players to start."); return; }
+  function startRound(source = stateRef.current) {
+    if (source.players.length < 2) { setStatus("Invite at least 2 players to start."); return; }
     setStatus("");
-    const first = (state.round * 5 + Math.floor(Math.random() * ONE_ANSWER_PROMPTS.length)) % ONE_ANSWER_PROMPTS.length;
+    const first = (source.round * 5 + Math.floor(Math.random() * ONE_ANSWER_PROMPTS.length)) % ONE_ANSWER_PROMPTS.length;
     let second = (first + 3 + Math.floor(Math.random() * (ONE_ANSWER_PROMPTS.length - 1))) % ONE_ANSWER_PROMPTS.length;
     if (second === first) second = (second + 1) % ONE_ANSWER_PROMPTS.length;
-    broadcast({ ...state, phase: "prompt", round: state.round + 1, prompts: [ONE_ANSWER_PROMPTS[first], ONE_ANSWER_PROMPTS[second]], activeQuestion: 0, answers: [], votes: {}, deadline: Date.now() + 60000 });
+    broadcast({ ...source, phase: "prompt", round: source.round + 1, prompts: [ONE_ANSWER_PROMPTS[first], ONE_ANSWER_PROMPTS[second]], activeQuestion: 0, answers: [], votes: {}, deadline: Date.now() + 60000 });
   }
   function beginVote(source = stateRef.current) {
     if (source.phase !== "prompt") return;
@@ -172,7 +176,10 @@ export default function Home() {
     if (state.activeQuestion === 0 && state.answers.some(a => a.question === 1)) { broadcast({ ...state, phase: "vote", activeQuestion: 1, votes: {}, deadline: Date.now() + 45000 }); return; }
     broadcast({ ...state, phase: "scores" });
   }
-  function continueAfterScores() { state.round >= 3 ? broadcast({ ...state, phase: "final" }) : startRound(); }
+  function continueAfterScores() {
+    const current = stateRef.current;
+    current.round >= 3 ? broadcast({ ...current, phase: "final" }) : startRound(current);
+  }
   function submitAnswer() { const conn = connections.current.get("host"); const required = answers.slice(0, 2); if (!conn?.open || required.some(a => !a.trim())) { setStatus("Please answer both questions."); return; } setStatus("Sending answers…"); conn.send({ type: "answer", playerId: playerId.current, texts: required }); }
   function submitVote(choice: string) { const conn = connections.current.get("host"); if (!conn?.open || voted) return; conn.send({ type: "vote", playerId: playerId.current, choice }); setVoted(true); }
 
@@ -200,7 +207,7 @@ function HostView({ state, players, status, onStart, onVote, onReveal, onNext, o
     {state.phase === "lobby" && <section className="center"><div className="eyebrow">THE FLOCK IS GATHERING</div><h2>Room <em>{state.room}</em></h2><p>Players join with the room code and their name.</p><div className="playerGrid">{players.map((p,i) => <div className="playerChip" key={p.id} style={{"--chip":COLORS[i%COLORS.length]} as React.CSSProperties}>{p.name}</div>)}{players.length === 0 && <div className="waiting">Waiting for the first player…</div>}</div><button className="primary" onClick={onStart}>START GAME <span>→</span></button>{status && <p className="status">{status}</p>}</section>}
     {state.phase === "prompt" && <section className="center round"><div className="eyebrow">ROUND {state.round} OF 3 · TWO QUESTIONS</div><Countdown deadline={state.deadline} /><div className="promptPair"><div><span>QUESTION 1</span><h3>{state.prompts[0]}</h3></div><div><span>QUESTION 2</span><h3>{state.prompts[1]}</h3></div></div><p>{new Set(state.answers.map(a => a.playerId)).size} of {state.players.length} players answered both</p><div className="progress"><i style={{width:`${state.players.length ? new Set(state.answers.map(a => a.playerId)).size/state.players.length*100 : 0}%`}} /></div><button className="secondary light" disabled={state.answers.length < 2} onClick={() => onVote()}>START VOTING</button></section>}
     {state.phase === "vote" && <section className="center round voteStage"><div className="eyebrow">QUESTION {state.activeQuestion + 1} · VOTE FOR THE FUNNIEST</div><h2>{state.prompts[state.activeQuestion]}</h2><div className="answerGrid">{state.answers.filter(a=>a.question===state.activeQuestion).map(a => <div className="answerCard bounceIn" key={a.id}>{a.text}</div>)}</div><p>{Object.keys(state.votes).length} of {state.players.length} votes are in</p><button className="secondary light" onClick={onReveal}>REVEAL WINNER</button></section>}
-    {state.phase === "reveal" && <section className="center round revealStage"><Confetti /><div className="winnerBurst">HOLY MOLY!</div><div className="eyebrow">THE GOOD WORD GOES TO…</div><h2>{state.prompts[state.activeQuestion]}</h2>{state.answers.filter(a=>a.question===state.activeQuestion).length < 2 ? <p>Not enough answers for this question.</p> : <div className="answerGrid">{[...state.answers].filter(a=>a.question===state.activeQuestion).sort((a,b) => Object.values(state.votes).filter(x=>x===b.id).length-Object.values(state.votes).filter(x=>x===a.id).length).map((a,i) => <div className={`answerCard result ${i===0 ? "winner" : ""}`} key={a.id}><p>{a.text}</p><span>{a.name}</span><b>{Object.values(state.votes).filter(x=>x===a.id).length * 100} pts</b></div>)}</div>}<button className="primary" onClick={onNext}>{state.activeQuestion === 0 ? "VOTE ON QUESTION 2" : state.round >= 3 ? "FINAL SCORES" : "NEXT ROUND"} <span>→</span></button></section>}
+    {state.phase === "reveal" && <section className="center round revealStage"><Confetti /><div className="winnerBurst">HOLY MOLY!</div><div className="eyebrow">THE GOOD WORD GOES TO…</div><h2>{state.prompts[state.activeQuestion]}</h2>{state.answers.filter(a=>a.question===state.activeQuestion).length < 2 ? <p>Not enough answers for this question.</p> : <div className="answerGrid">{[...state.answers].filter(a=>a.question===state.activeQuestion).sort((a,b) => Object.values(state.votes).filter(x=>x===b.id).length-Object.values(state.votes).filter(x=>x===a.id).length).map((a,i) => <div className={`answerCard result ${i===0 ? "winner" : ""}`} key={a.id}><p>{a.text}</p><span>{a.name}</span><b>{Object.values(state.votes).filter(x=>x===a.id).length * 100} pts</b></div>)}</div>}<button className="primary" onClick={onNext}>{state.activeQuestion === 0 ? "VOTE ON QUESTION 2" : "SHOW ROUND SCORES"} <span>→</span></button></section>}
     {state.phase === "scores" && <section className="center standings"><div className="eyebrow">ROUND {state.round} COMPLETE</div><h2>Here’s where<br/><em>everybody stands.</em></h2><div className="leaderboard animatedBoard">{players.map((p,i) => <div key={p.id} style={{animationDelay:`${i*.12}s`}}><span>{i+1}</span><b>{p.name}</b><strong>{p.score}</strong></div>)}</div><button className="primary" onClick={onContinue}>{state.round >= 3 ? "GRAND TOTALS" : `START ROUND ${state.round+1}`} <span>→</span></button></section>}
     {state.phase === "final" && <section className="center finalWinner"><Confetti /><div className="crown">♛</div><div className="eyebrow">THE GRAND WINNER</div><h2><em>{players[0]?.name || "Everybody"}</em></h2><p>{players[0]?.score || 0} glorious points</p><div className="leaderboard">{players.map((p,i) => <div key={p.id}><span>{i+1}</span><b>{p.name}</b><strong>{p.score}</strong></div>)}</div><button className="primary" onClick={() => location.reload()}>PLAY AGAIN <span>↻</span></button></section>}
   </main>;
