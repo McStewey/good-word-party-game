@@ -181,7 +181,7 @@ const SAFETY_QUIPS = ["I was counting the camels.", "Ask me after the potluck.",
 
 const COLORS = ["#ff6b5e", "#f3b43f", "#55c7a6", "#6f86ff", "#d36bec", "#ff8d4d"];
 const BIBLE_BADGES = ["🛶", "🐑", "🐟", "🕊️", "🌈", "⭐", "🪨", "🏺"];
-const GAME_VERSION = "2026.08.13.17";
+const GAME_VERSION = "2026.08.13.18";
 const clean = (value: string, max = 80) => value.replace(/[<>]/g, "").trim().slice(0, max);
 const makeRoom = () => Array.from({ length: 6 }, () => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 32)]).join("");
 const peerId = (room: string) => `amen-party-${room.toLowerCase()}`;
@@ -227,7 +227,16 @@ export default function Home() {
   const peerRef = useRef<PeerInstance | null>(null);
   const connections = useRef<Map<string, PeerConnection>>(new Map());
   const stateRef = useRef(state);
-  const playerId = useRef(crypto.randomUUID());
+  const playerId = useRef("");
+  const playerSession = useRef<{ room: string; name: string } | null>(null);
+  const reconnectTimer = useRef<number | null>(null);
+  const reconnectAttempts = useRef(0);
+  const connecting = useRef(false);
+  if (!playerId.current) {
+    const savedId = typeof window !== "undefined" ? window.localStorage.getItem("good-word-player-id") : null;
+    playerId.current = savedId || crypto.randomUUID();
+    if (typeof window !== "undefined" && !savedId) window.localStorage.setItem("good-word-player-id", playerId.current);
+  }
   useEffect(() => { stateRef.current = state; }, [state]);
   useEffect(() => { if (state.phase === "prompt") { setAnswers(["", ""]); setSubmitted(false); setStatus(""); } }, [state.phase, state.round]);
   useEffect(() => {
@@ -260,7 +269,19 @@ export default function Home() {
     const timer = window.setTimeout(() => continueAfterScores(), Math.max(0, state.deadline - Date.now()));
     return () => window.clearTimeout(timer);
   }, [mode, state.phase, state.deadline]);
-  useEffect(() => () => peerRef.current?.destroy(), []);
+  useEffect(() => {
+    const resume = () => {
+      if (document.visibilityState === "visible" && playerSession.current && !connections.current.get("host")?.open) scheduleReconnect(100);
+    };
+    window.addEventListener("online", resume);
+    document.addEventListener("visibilitychange", resume);
+    return () => {
+      window.removeEventListener("online", resume);
+      document.removeEventListener("visibilitychange", resume);
+      if (reconnectTimer.current) window.clearTimeout(reconnectTimer.current);
+      peerRef.current?.destroy();
+    };
+  }, []);
 
   const broadcast = (next: GameState) => {
     stateRef.current = next;
@@ -346,9 +367,74 @@ export default function Home() {
     }
   }
 
+  function scheduleReconnect(delay?: number) {
+    if (!playerSession.current || reconnectTimer.current !== null || connecting.current) return;
+    const wait = delay ?? Math.min(8000, 750 * 2 ** reconnectAttempts.current);
+    setStatus("Connection paused — rejoining your seat…");
+    reconnectTimer.current = window.setTimeout(() => {
+      reconnectTimer.current = null;
+      const saved = playerSession.current;
+      if (saved) connectPlayer(saved.room, saved.name, true);
+    }, wait);
+  }
+
+  async function connectPlayer(room: string, playerName: string, reconnecting = false) {
+    if (connecting.current) return;
+    connecting.current = true;
+    if (!reconnecting) setStatus("Joining the room…");
+    try {
+      peerRef.current?.destroy(); connections.current.clear();
+      await loadPeer();
+      const peer = new window.Peer(); peerRef.current = peer;
+      peer.on("open", () => {
+        if (peerRef.current !== peer) return;
+        const conn = peer.connect(peerId(room));
+        conn.on("open", () => {
+          if (peerRef.current !== peer) return;
+          connections.current.set("host", conn);
+          playerSession.current = { room, name: playerName };
+          reconnectAttempts.current = 0; connecting.current = false;
+          conn.send({ type: "join", playerId: playerId.current, name: playerName, version: GAME_VERSION });
+          setMode("player"); setStatus(reconnecting ? "Back in the game!" : "");
+        });
+        conn.on("data", (msg: any) => {
+          if (msg.type === "state") { const safe = normalizeState(msg.state); stateRef.current = safe; setState(safe); setSubmitted(safe.answers.some((a: Answer) => a.playerId === playerId.current)); setVoted(Boolean(safe.votes[`${playerId.current}:${safe.round}:${safe.activeQuestion}`])); setStatus(""); }
+          if (msg.type === "answer-accepted") { setSubmitted(true); setStatus(""); }
+          if (msg.type === "answer-error") { setSubmitted(false); setStatus(msg.message); }
+          if (msg.type === "vote-accepted") { if (!msg.final) setVoted(true); setStatus(msg.final ? "Medal recorded!" : "Vote recorded!"); }
+          if (msg.type === "vote-error") { if (stateRef.current.round !== 3) setVoted(false); setStatus(msg.message); }
+          if (msg.type === "join-error") { playerSession.current = null; connecting.current = false; setMode(null); setScreen("join"); setStatus(msg.message); }
+        });
+        conn.on("close", () => {
+          if (connections.current.get("host") !== conn) return;
+          connections.current.delete("host"); connecting.current = false; scheduleReconnect();
+        });
+        window.setTimeout(() => {
+          if (!conn.open && peerRef.current === peer) {
+            connecting.current = false; reconnectAttempts.current += 1;
+            reconnecting ? scheduleReconnect() : setStatus("Room not found. Check the code and try again.");
+          }
+        }, 7000);
+      });
+      peer.on("error", () => {
+        if (peerRef.current !== peer) return;
+        connecting.current = false; reconnectAttempts.current += 1;
+        if (playerSession.current && reconnecting) scheduleReconnect();
+        else { playerSession.current = null; setMode(null); setScreen("join"); setStatus("Room not found. Check the code and try again."); peer.destroy(); }
+      });
+    } catch {
+      connecting.current = false; reconnectAttempts.current += 1;
+      if (playerSession.current && reconnecting) scheduleReconnect(); else setStatus("Could not connect. Check your internet and try again.");
+    }
+  }
+
   async function joinGame() {
     const room = clean(roomInput.toUpperCase(), 6); const playerName = clean(name, 18);
     if (room.length !== 6 || !playerName) { setStatus("Enter the 6-letter room code and your name."); return; }
+    playerSession.current = { room, name: playerName };
+    reconnectAttempts.current = 0;
+    await connectPlayer(room, playerName);
+    return;
     setStatus("Joining the room…");
     try {
       peerRef.current?.destroy(); connections.current.clear();
