@@ -74,10 +74,25 @@ const ONE_ANSWER_PROMPTS = [
 
 const COLORS = ["#ff6b5e", "#f3b43f", "#55c7a6", "#6f86ff", "#d36bec", "#ff8d4d"];
 const BIBLE_BADGES = ["🛶", "🐑", "🐟", "🕊️", "🌈", "⭐", "🪨", "🏺"];
-const GAME_VERSION = "2026.08.13.9";
+const GAME_VERSION = "2026.08.13.10";
 const clean = (value: string, max = 80) => value.replace(/[<>]/g, "").trim().slice(0, max);
 const makeRoom = () => Array.from({ length: 6 }, () => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 32)]).join("");
 const peerId = (room: string) => `amen-party-${room.toLowerCase()}`;
+
+function normalizeState(raw: any): GameState {
+  const players: Player[] = Array.isArray(raw?.players) ? raw.players : [];
+  const prompts: string[] = Array.isArray(raw?.prompts) ? raw.prompts.filter(Boolean) : [];
+  const questionCount: 1 | 2 = raw?.questionCount === 1 ? 1 : 2;
+  const fallbackIndexes = prompts.map((_, index) => index).slice(0, questionCount);
+  return {
+    phase: raw?.phase || "home", room: raw?.room || "", players, round: Number(raw?.round) || 0,
+    prompts,
+    matchups: Array.isArray(raw?.matchups) ? raw.matchups : prompts.map((prompt, index) => ({ id: `legacy-${index}`, prompt, playerIds: players.map(p => p.id) })),
+    assignments: raw?.assignments && typeof raw.assignments === "object" ? raw.assignments : Object.fromEntries(players.map(p => [p.id, fallbackIndexes])),
+    questionCount, activeQuestion: Number(raw?.activeQuestion) || 0,
+    answers: Array.isArray(raw?.answers) ? raw.answers : [], votes: raw?.votes && typeof raw.votes === "object" ? raw.votes : {}, deadline: raw?.deadline,
+  };
+}
 
 function loadPeer(): Promise<void> {
   if (typeof window !== "undefined" && window.Peer) return Promise.resolve();
@@ -195,7 +210,7 @@ export default function Home() {
         const conn = peer.connect(peerId(room));
         conn.on("open", () => { connections.current.set("host", conn); conn.send({ type: "join", playerId: playerId.current, name: playerName, version: GAME_VERSION }); setMode("player"); setStatus(""); });
         conn.on("data", (msg: any) => {
-          if (msg.type === "state") { setState(msg.state); setSubmitted(msg.state.answers.some((a: Answer) => a.playerId === playerId.current)); setVoted(Boolean(msg.state.votes[`${playerId.current}:${msg.state.round}:${msg.state.activeQuestion}`])); }
+          if (msg.type === "state") { const safe = normalizeState(msg.state); stateRef.current = safe; setState(safe); setSubmitted(safe.answers.some((a: Answer) => a.playerId === playerId.current)); setVoted(Boolean(safe.votes[`${playerId.current}:${safe.round}:${safe.activeQuestion}`])); setStatus(""); }
           if (msg.type === "answer-accepted") { setSubmitted(true); setStatus(""); }
           if (msg.type === "answer-error") { setSubmitted(false); setStatus(msg.message); }
           if (msg.type === "join-error") { setMode(null); setScreen("join"); setStatus(msg.message); }
@@ -285,8 +300,8 @@ function HostView({ state, players, status, onStart, onVote, onNext, onContinue 
 
 function PlayerView({ state, me, answers, setAnswers, submitted, voted, onAnswer, onVote, status }: { state: GameState; me: string; answers: string[]; setAnswers: (s:string[])=>void; submitted:boolean; voted:boolean; onAnswer:()=>void; onVote:(id:string)=>void; status:string }) {
   const myName = state.players.find(p => p.id === me)?.name || "Player";
-  const assigned = state.assignments[me] || [];
-  const activeMatchup = state.matchups[state.activeQuestion];
+  const assigned = state.assignments?.[me] || [];
+  const activeMatchup = state.matchups?.[state.activeQuestion];
   const hasOutsideVoters = state.players.some(p => !activeMatchup?.playerIds.includes(p.id));
   const sittingOut = hasOutsideVoters && activeMatchup?.playerIds.includes(me);
   return <main className="phone"><header><div className="brand"><span className="spark">✦</span> GOOD WORD</div><span>{myName}</span></header>
