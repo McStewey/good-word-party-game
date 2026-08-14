@@ -181,7 +181,7 @@ const SAFETY_QUIPS = ["I was counting the camels.", "Ask me after the potluck.",
 
 const COLORS = ["#ff6b5e", "#f3b43f", "#55c7a6", "#6f86ff", "#d36bec", "#ff8d4d"];
 const BIBLE_BADGES = ["🛶", "🐑", "🐟", "🕊️", "🌈", "⭐", "🪨", "🏺"];
-const GAME_VERSION = "2026.08.13.16";
+const GAME_VERSION = "2026.08.13.17";
 const clean = (value: string, max = 80) => value.replace(/[<>]/g, "").trim().slice(0, max);
 const makeRoom = () => Array.from({ length: 6 }, () => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 32)]).join("");
 const peerId = (room: string) => `amen-party-${room.toLowerCase()}`;
@@ -312,30 +312,37 @@ export default function Home() {
       if (new Set(next.answers.map(a => a.playerId)).size === assignedPlayers && assignedPlayers > 1) setTimeout(() => beginVote(next), 500);
       return;
     }
-    const matchup = current.matchups[current.activeQuestion];
-    const chosenAnswer = current.answers.find(a => a.id === msg.choice && a.question === current.activeQuestion);
-    if (msg.type === "vote" && current.phase === "vote" && chosenAnswer) {
+    if (msg.type === "vote") {
+      if (current.phase !== "vote") { conn.send({ type: "vote-error", message: "Voting is not open yet." }); return; }
+      const matchup = current.matchups[current.activeQuestion];
+      const chosenAnswer = current.answers.find(a => a.id === msg.choice && a.question === current.activeQuestion);
+      if (!chosenAnswer) { conn.send({ type: "vote-error", message: "That answer is no longer available. Please choose again." }); return; }
       if (current.round === 3) {
         const finalists = current.players.filter(p => current.assignments[p.id]?.length);
-        if (!current.assignments[msg.playerId]?.length) return;
+        if (!current.assignments[msg.playerId]?.length) { conn.send({ type: "vote-error", message: "You joined after the final round began." }); return; }
         const medalCount = finalists.length <= 4 ? 2 : 3;
         const rank = Number(msg.rank);
         const voterPrefix = `${msg.playerId}:${current.round}:${current.activeQuestion}:`;
-        if (!Number.isInteger(rank) || rank < 0 || rank >= medalCount || chosenAnswer.playerId === msg.playerId) return;
-        if (Object.entries(current.votes).some(([key, answer]) => key.startsWith(voterPrefix) && answer === msg.choice)) return;
+        if (!Number.isInteger(rank) || rank < 0 || rank >= medalCount) { conn.send({ type: "vote-error", message: "Please choose the highlighted medal." }); return; }
+        if (chosenAnswer.playerId === msg.playerId) { conn.send({ type: "vote-error", message: "Choose somebody else's answer." }); return; }
+        if (Object.entries(current.votes).some(([key, answer]) => key.startsWith(voterPrefix) && answer === msg.choice)) { conn.send({ type: "vote-error", message: "Give each medal to a different answer." }); return; }
         const key = `${voterPrefix}${rank}`;
-        if (current.votes[key]) return;
+        if (current.votes[key]) { conn.send({ type: "vote-accepted", final: true, rank }); return; }
         const next = { ...current, votes: { ...current.votes, [key]: msg.choice } }; broadcast(next);
+        conn.send({ type: "vote-accepted", final: true, rank });
         const expected = finalists.length * medalCount;
         if (Object.keys(next.votes).length >= expected) setTimeout(() => reveal(next), 350);
         return;
       }
       const outsideVoters = current.players.filter(p => !matchup?.playerIds.includes(p.id));
-      if (matchup?.playerIds.includes(msg.playerId)) return;
+      if (matchup?.playerIds.includes(msg.playerId)) { conn.send({ type: "vote-error", message: "This is your matchup, so you sit this vote out." }); return; }
       const key = `${msg.playerId}:${current.round}:${current.activeQuestion}`;
-      if (current.votes[key]) return;
+      if (current.votes[key]) { conn.send({ type: "vote-accepted" }); return; }
       const next = { ...current, votes: { ...current.votes, [key]: msg.choice } }; broadcast(next);
-      if (Object.keys(next.votes).length >= outsideVoters.length) setTimeout(() => reveal(next), 350);
+      conn.send({ type: "vote-accepted" });
+      const connectedVoters = outsideVoters.filter(p => connections.current.get(p.id)?.open);
+      if (Object.keys(next.votes).length >= connectedVoters.length) setTimeout(() => reveal(next), 350);
+      return;
     }
   }
 
@@ -354,6 +361,8 @@ export default function Home() {
           if (msg.type === "state") { const safe = normalizeState(msg.state); stateRef.current = safe; setState(safe); setSubmitted(safe.answers.some((a: Answer) => a.playerId === playerId.current)); setVoted(Boolean(safe.votes[`${playerId.current}:${safe.round}:${safe.activeQuestion}`])); setStatus(""); }
           if (msg.type === "answer-accepted") { setSubmitted(true); setStatus(""); }
           if (msg.type === "answer-error") { setSubmitted(false); setStatus(msg.message); }
+          if (msg.type === "vote-accepted") { if (!msg.final) setVoted(true); setStatus(msg.final ? "Medal recorded!" : "Vote recorded!"); }
+          if (msg.type === "vote-error") { if (stateRef.current.round !== 3) setVoted(false); setStatus(msg.message); }
           if (msg.type === "join-error") { setMode(null); setScreen("join"); setStatus(msg.message); }
         });
         conn.on("close", () => setStatus("The host ended the room."));
@@ -430,7 +439,7 @@ export default function Home() {
   }
   function nextRound() {
     const current = stateRef.current;
-    if (current.activeQuestion < current.matchups.length - 1) { broadcast({ ...current, phase: "vote", activeQuestion: current.activeQuestion + 1, votes: {}, deadline: Date.now() + 20000 }); return; }
+    if (current.activeQuestion < current.matchups.length - 1) { const announcer = BIBLE_ANNOUNCERS[Math.floor(Math.random() * BIBLE_ANNOUNCERS.length)]; broadcast({ ...current, phase: "vote-intro", activeQuestion: current.activeQuestion + 1, votes: {}, announcer, deadline: Date.now() + 3000 }); return; }
     broadcast({ ...current, phase: "scores", deadline: Date.now() + 7000 });
   }
   function continueAfterScores() {
@@ -438,7 +447,7 @@ export default function Home() {
     current.round >= 3 ? broadcast({ ...current, phase: "final" }) : startRound(current);
   }
   function submitAnswer() { const conn = connections.current.get("host"); const count = state.assignments[playerId.current]?.length || 0; const required = answers.slice(0, count); if (!conn?.open || !count || required.some(a => !a.trim())) { setStatus(`Please answer ${count === 1 ? "the question" : "both questions"}.`); return; } setStatus("Sending answers…"); conn.send({ type: "answer", playerId: playerId.current, texts: required }); }
-  function submitVote(choice: string, rank?: number) { const conn = connections.current.get("host"); if (!conn?.open || (voted && state.round !== 3)) return; conn.send({ type: "vote", playerId: playerId.current, choice, rank }); if (state.round !== 3) setVoted(true); }
+  function submitVote(choice: string, rank?: number) { const conn = connections.current.get("host"); if (!conn?.open || (voted && state.round !== 3)) return; setStatus("Recording vote…"); conn.send({ type: "vote", playerId: playerId.current, choice, rank }); }
 
   const sortedPlayers = [...state.players].sort((a,b) => b.score - a.score);
   if (mode === "host") return <HostView state={state} players={sortedPlayers} status={status} onStart={() => startRound()} onVote={beginVote} onNext={nextRound} onContinue={continueAfterScores} />;
@@ -497,7 +506,7 @@ function PlayerView({ state, me, answers, setAnswers, submitted, voted, onAnswer
 function VoteIntro({ announcer, compact = false }: { announcer?: Announcer; compact?: boolean }) {
   const character = announcer || BIBLE_ANNOUNCERS[0];
   return <section className={`center voteIntro ${compact ? "compact" : ""}`}>
-    <div className="voteBubble vb1"/><div className="voteBubble vb2"/><div className="voteStar">★</div>
+    <div className="transitionRays"/><div className="swoosh sw1">WHOOOSH!</div><div className="swoosh sw2">POP!</div><div className="voteBubble vb1"/><div className="voteBubble vb2"/><div className="voteStar">★</div>
     <div className="announcerCharacter" aria-label={`${character.name} announces voting`}><div className="characterHalo"/><div className="characterFace">{character.icon}</div><b>{character.name}</b></div>
     <div className="speechBubble"><span>IT'S TIME TO</span><h2>VOTE!</h2><p>{character.line}</p></div>
   </section>;
