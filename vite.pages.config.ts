@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-const release = "20260812-8";
+const release = "20260813-9";
 
 export default defineConfig({
   root: "pages",
