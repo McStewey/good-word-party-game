@@ -181,7 +181,7 @@ const SAFETY_QUIPS = ["I was counting the camels.", "Ask me after the potluck.",
 
 const COLORS = ["#ff6b5e", "#f3b43f", "#55c7a6", "#6f86ff", "#d36bec", "#ff8d4d"];
 const BIBLE_BADGES = ["🛶", "🐑", "🐟", "🕊️", "🌈", "⭐", "🪨", "🏺"];
-const GAME_VERSION = "2026.08.13.18";
+const GAME_VERSION = "2026.08.13.19";
 const clean = (value: string, max = 80) => value.replace(/[<>]/g, "").trim().slice(0, max);
 const makeRoom = () => Array.from({ length: 6 }, () => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 32)]).join("");
 const peerId = (room: string) => `amen-party-${room.toLowerCase()}`;
@@ -540,10 +540,13 @@ export default function Home() {
   if (mode === "player") return <PlayerView state={state} me={playerId.current} answers={answers} setAnswers={setAnswers} submitted={submitted} voted={voted} onAnswer={submitAnswer} onVote={submitVote} status={status} />;
 
   return <main className="landing">
+    <div className="showLights" aria-hidden="true">{Array.from({length:14},(_,i)=><i key={i}/>)}</div>
+    <div className="landingBurst" aria-hidden="true"/>
     <nav><div className="brand"><span className="spark">✦</span> GOOD WORD</div><div className="tag">A party game for good people</div></nav>
     <section className="hero">
+      <div className="onAir"><i/> LIVE FROM THE FELLOWSHIP HALL</div>
       <div className="eyebrow">CHURCH NIGHT JUST GOT FUNNIER</div>
-      <h1>Say something<br/><em>worth repeating.</em></h1>
+      <h1><span>THE</span> GOOD WORD<br/><em>GAME SHOW!</em></h1>
       <p className="lede">A hilarious, wholesome battle of wit for youth groups, small groups, and anyone who knows the potluck is the real main event.</p>
       {screen === "landing" ? <div className="actions"><button className="primary" onClick={hostGame}>HOST A GAME <span>→</span></button><button className="secondary" onClick={() => setScreen("join")}>JOIN A ROOM</button></div> :
       <div className="joinCard"><label>ROOM CODE<input autoFocus value={roomInput} onChange={e => setRoomInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0,6))} placeholder="ABC123" /></label><label>YOUR NAME<input value={name} onChange={e => setName(e.target.value.slice(0,18))} placeholder="Esther" onKeyDown={e => e.key === "Enter" && joinGame()} /></label><button className="primary" onClick={joinGame}>LET’S GO <span>→</span></button><button className="back" onClick={() => setScreen("landing")}>← Back</button></div>}
@@ -655,7 +658,7 @@ function isUnanimous(state: GameState) {
 function Countdown({ deadline }: { deadline?: number }) {
   const [seconds, setSeconds] = useState(() => Math.max(0, Math.ceil(((deadline || Date.now()) - Date.now()) / 1000)));
   useEffect(() => { const tick = () => setSeconds(Math.max(0, Math.ceil(((deadline || Date.now()) - Date.now()) / 1000))); tick(); const timer = window.setInterval(tick, 250); return () => window.clearInterval(timer); }, [deadline]);
-  return <div className={`timer ${seconds <= 5 ? "urgent" : ""}`} aria-live="polite">{seconds}</div>;
+  return <div className={`timer ${seconds <= 5 ? "urgent" : ""}`} aria-live="polite"><div className="timerTicks" aria-hidden="true">{Array.from({length:12},(_,i)=><i key={i} style={{"--tick":i} as React.CSSProperties}/>)}</div><span key={seconds}>{seconds || "GO!"}</span></div>;
 }
 
 function AnimatedNumber({ value, delay = 0 }: { value: number; delay?: number }) {
