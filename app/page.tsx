@@ -7,7 +7,7 @@ type Answer = { id: string; playerId: string; name: string; text: string; questi
 type Matchup = { id: string; prompt: string; playerIds: string[] };
 type Announcer = { name: string; icon: string; line: string };
 type Phase = "home" | "lobby" | "countdown" | "prompt" | "vote-intro" | "vote" | "reveal" | "scores" | "final";
-type GameState = { phase: Phase; room: string; players: Player[]; round: number; prompts: string[]; promptHistory: string[]; matchups: Matchup[]; assignments: Record<string, number[]>; questionCount: 1 | 2; activeQuestion: number; answers: Answer[]; votes: Record<string, string>; lastPoints: Record<string, number>; announcer?: Announcer; deadline?: number };
+type GameState = { phase: Phase; room: string; players: Player[]; round: number; prompts: string[]; promptHistory: string[]; matchups: Matchup[]; assignments: Record<string, number[]>; questionCount: 1 | 2; activeQuestion: number; answers: Answer[]; votes: Record<string, string>; lastPoints: Record<string, number>; lastMedals?: Record<string, number[]>; announcer?: Announcer; deadline?: number };
 type PeerConnection = { peer: string; open: boolean; send: (data: unknown) => void; on: (event: string, cb: (data?: any) => void) => void; close: () => void };
 type PeerInstance = { id: string; on: (event: string, cb: (data?: any) => void) => void; connect: (id: string) => PeerConnection; destroy: () => void };
 
@@ -138,35 +138,35 @@ const BIBLE_ANNOUNCERS: Announcer[] = [
 ];
 
 const FINAL_LASH_PROMPTS = [
-  "WORD LASH: Write a funny sentence containing the word 'manna'.",
-  "WORD LASH: Write a funny sentence containing the word 'camel'.",
-  "WORD LASH: Write a funny sentence containing the word 'hallelujah'.",
-  "WORD LASH: Write a funny sentence containing the word 'shepherd'.",
-  "WORD LASH: Write a funny sentence containing the word 'potluck'.",
+  "WORD LASH: Invent a restaurant with this word in its name: MANNA",
+  "WORD LASH: Name a new roadside attraction using this word: CAMEL",
+  "WORD LASH: Create a movie title containing this word: HALLELUJAH",
+  "WORD LASH: Invent a helpful app with this word in its name: SHEPHERD",
+  "WORD LASH: Name a championship event using this word: POTLUCK",
   "ACRO LASH: What could A.R.K. stand for?",
-  "ACRO LASH: What could B.I.B.L.E. stand for?",
+  "ACRO LASH: What could B.I.G. stand for?",
   "ACRO LASH: What could P.R.A.Y. stand for?",
-  "ACRO LASH: What could C.H.O.I.R. stand for?",
+  "ACRO LASH: What could S.I.N. stand for?",
   "ACRO LASH: What could F.I.S.H. stand for?",
   "COMIC LASH: Noah looks over the side of the ark and says: ____.",
   "COMIC LASH: David reaches into his bag and says to Goliath: ____.",
   "COMIC LASH: Jonah wakes up inside the fish and announces: ____.",
   "COMIC LASH: Moses sees the long wilderness road and says: ____.",
   "COMIC LASH: Daniel enters the lions' den and whispers: ____.",
-  "WORD LASH: Write a funny sentence containing the word 'spatula'.",
-  "WORD LASH: Write a funny sentence containing the word 'penguin'.",
-  "WORD LASH: Write a funny sentence containing the word 'homework'.",
-  "WORD LASH: Write a funny sentence containing the word 'mustache'.",
-  "WORD LASH: Write a funny sentence containing the word 'spaceship'.",
-  "WORD LASH: Write a funny sentence containing the word 'pancake'.",
-  "WORD LASH: Write a funny sentence containing the word 'sneakers'.",
-  "WORD LASH: Write a funny sentence containing the word 'pickle'.",
+  "WORD LASH: Invent a kitchen gadget with this word in its name: SPATULA",
+  "WORD LASH: Name a fancy hotel using this word: PENGUIN",
+  "WORD LASH: Create a scary movie title containing this word: HOMEWORK",
+  "WORD LASH: Invent a new holiday featuring this word: MUSTACHE",
+  "WORD LASH: Name a family restaurant using this word: SPACESHIP",
+  "WORD LASH: Invent a superhero with this word in the name: PANCAKE",
+  "WORD LASH: Name a dance craze using this word: SNEAKERS",
+  "WORD LASH: Create a website with this word in its name: PICKLE",
   "ACRO LASH: What could P.E.T. stand for?",
-  "ACRO LASH: What could S.N.A.C.K. stand for?",
-  "ACRO LASH: What could S.C.H.O.O.L. stand for?",
-  "ACRO LASH: What could R.O.B.O.T. stand for?",
-  "ACRO LASH: What could P.I.Z.Z.A. stand for?",
-  "ACRO LASH: What could F.A.M.I.L.Y. stand for?",
+  "ACRO LASH: What could S.N.K. stand for?",
+  "ACRO LASH: What could S.C.H. stand for?",
+  "ACRO LASH: What could R.B.T. stand for?",
+  "ACRO LASH: What could P.Z.A. stand for?",
+  "ACRO LASH: What could F.A.M. stand for?",
   "COMIC LASH: A squirrel opens a tiny briefcase and announces: ____.",
   "COMIC LASH: The family dog walks into the kitchen wearing sunglasses and says: ____.",
   "COMIC LASH: An alien tries pizza for the first time and declares: ____.",
@@ -181,7 +181,7 @@ const SAFETY_QUIPS = ["I was counting the camels.", "Ask me after the potluck.",
 
 const COLORS = ["#ff6b5e", "#f3b43f", "#55c7a6", "#6f86ff", "#d36bec", "#ff8d4d"];
 const BIBLE_BADGES = ["🛶", "🐑", "🐟", "🕊️", "🌈", "⭐", "🪨", "🏺"];
-const GAME_VERSION = "2026.08.13.15";
+const GAME_VERSION = "2026.08.13.16";
 const clean = (value: string, max = 80) => value.replace(/[<>]/g, "").trim().slice(0, max);
 const makeRoom = () => Array.from({ length: 6 }, () => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 32)]).join("");
 const peerId = (room: string) => `amen-party-${room.toLowerCase()}`;
@@ -197,7 +197,7 @@ function normalizeState(raw: any): GameState {
     matchups: Array.isArray(raw?.matchups) ? raw.matchups : prompts.map((prompt, index) => ({ id: `legacy-${index}`, prompt, playerIds: players.map(p => p.id) })),
     assignments: raw?.assignments && typeof raw.assignments === "object" ? raw.assignments : Object.fromEntries(players.map(p => [p.id, fallbackIndexes])),
     questionCount, activeQuestion: Number(raw?.activeQuestion) || 0,
-    answers: Array.isArray(raw?.answers) ? raw.answers : [], votes: raw?.votes && typeof raw.votes === "object" ? raw.votes : {}, lastPoints: raw?.lastPoints && typeof raw.lastPoints === "object" ? raw.lastPoints : {}, deadline: raw?.deadline,
+    answers: Array.isArray(raw?.answers) ? raw.answers : [], votes: raw?.votes && typeof raw.votes === "object" ? raw.votes : {}, lastPoints: raw?.lastPoints && typeof raw.lastPoints === "object" ? raw.lastPoints : {}, lastMedals: raw?.lastMedals && typeof raw.lastMedals === "object" ? raw.lastMedals : {}, deadline: raw?.deadline,
   };
 }
 
@@ -371,7 +371,7 @@ export default function Home() {
       const prompt = FINAL_LASH_PROMPTS[Math.floor(Math.random() * FINAL_LASH_PROMPTS.length)];
       const assignments = Object.fromEntries(source.players.map(p => [p.id, [0]]));
       const matchups = [{ id: "final-lash", prompt, playerIds: source.players.map(p => p.id) }];
-      broadcast({ ...source, phase: "countdown", round: 3, prompts: [prompt], promptHistory: [...source.promptHistory, prompt].slice(-25), matchups, assignments, questionCount: 1, activeQuestion: 0, answers: [], votes: {}, lastPoints: {}, announcer: undefined, deadline: Date.now() + 10000 });
+      broadcast({ ...source, phase: "countdown", round: 3, prompts: [prompt], promptHistory: [...source.promptHistory, prompt].slice(-25), matchups, assignments, questionCount: 1, activeQuestion: 0, answers: [], votes: {}, lastPoints: {}, lastMedals: {}, announcer: undefined, deadline: Date.now() + 10000 });
       return;
     }
     const questionCount: 1 | 2 = 2;
@@ -391,7 +391,7 @@ export default function Home() {
       assignments[opponent.id].push(index);
     });
     const prompts = matchups.map(m => m.prompt);
-    broadcast({ ...source, phase: "countdown", round: nextRoundNumber, prompts, promptHistory: [...(source.promptHistory || []), ...prompts].slice(-25), matchups, assignments, questionCount, activeQuestion: 0, answers: [], votes: {}, lastPoints: {}, announcer: undefined, deadline: Date.now() + 10000 });
+    broadcast({ ...source, phase: "countdown", round: nextRoundNumber, prompts, promptHistory: [...(source.promptHistory || []), ...prompts].slice(-25), matchups, assignments, questionCount, activeQuestion: 0, answers: [], votes: {}, lastPoints: {}, lastMedals: {}, announcer: undefined, deadline: Date.now() + 10000 });
   }
   function beginVote(source = stateRef.current) {
     if (source.phase !== "prompt") return;
@@ -403,14 +403,15 @@ export default function Home() {
       }
     }));
     const announcer = BIBLE_ANNOUNCERS[Math.floor(Math.random() * BIBLE_ANNOUNCERS.length)];
-    broadcast({ ...source, answers, phase: "vote-intro", activeQuestion: 0, votes: {}, lastPoints: {}, announcer, deadline: Date.now() + 4000 });
+    broadcast({ ...source, answers, phase: "vote-intro", activeQuestion: 0, votes: {}, lastPoints: {}, lastMedals: {}, announcer, deadline: Date.now() + 4000 });
   }
   function reveal(source = stateRef.current) {
     const lastPoints: Record<string, number> = {};
+    const lastMedals: Record<string, number[]> = {};
     if (source.round === 3) {
       const finalistCount = source.players.filter(p => source.assignments[p.id]?.length).length;
       const weights = finalistCount <= 4 ? [1000, 500] : [1000, 750, 500];
-      Object.entries(source.votes).forEach(([key, answerId]) => { const rank = Number(key.split(":").pop()); lastPoints[answerId] = (lastPoints[answerId] || 0) + (weights[rank] || 0); });
+      Object.entries(source.votes).forEach(([key, answerId]) => { const rank = Number(key.split(":").pop()); lastPoints[answerId] = (lastPoints[answerId] || 0) + (weights[rank] || 0); (lastMedals[answerId] ||= []).push(rank); });
     } else {
       const counts: Record<string, number> = {}; Object.values(source.votes).forEach(id => counts[id] = (counts[id] || 0) + 1);
       const contenders = source.answers.filter(a => a.question === source.activeQuestion);
@@ -425,7 +426,7 @@ export default function Home() {
       });
     }
     const players = source.players.map(p => ({ ...p, score: p.score + source.answers.filter(a => a.playerId === p.id && a.question === source.activeQuestion).reduce((sum, a) => sum + (lastPoints[a.id] || 0), 0) }));
-    broadcast({ ...source, phase: "reveal", players, lastPoints, deadline: Date.now() + (source.round === 3 ? 7000 : 5000) });
+    broadcast({ ...source, phase: "reveal", players, lastPoints, lastMedals, deadline: Date.now() + (source.round === 3 ? 9000 : 6000) });
   }
   function nextRound() {
     const current = stateRef.current;
@@ -467,8 +468,8 @@ function HostView({ state, players, status, onStart, onVote, onNext, onContinue 
     {state.phase === "lobby" && <section className="center"><div className="eyebrow">THE FLOCK IS GATHERING</div><h2>Room <em>{state.room}</em></h2><p>Players join with the room code and their name.</p><div className="playerGrid">{players.map((p,i) => <div className="playerChip" key={p.id} style={{"--chip":COLORS[i%COLORS.length]} as React.CSSProperties}><i>{BIBLE_BADGES[i%BIBLE_BADGES.length]}</i>{p.name}</div>)}{players.length === 0 && <div className="waiting">Waiting for the first player…</div>}</div><button className="primary" onClick={onStart}>START GAME <span>→</span></button>{status && <p className="status">{status}</p>}</section>}
     {state.phase === "countdown" && <section className="center bubblyTransition"><div className="bubble b1"/><div className="bubble b2"/><div className="bubble b3"/><div className="eyebrow">ROUND {state.round} IS BUBBLING UP</div><h2>Get ready!</h2><Countdown deadline={state.deadline} /></section>}
     {state.phase === "prompt" && <section className="center round"><div className="eyebrow">{state.round === 3 ? "THE FINAL BLESSING · EVERYONE ANSWERS · 45 SECONDS" : `ROUND ${state.round} OF 3 · TWO QUESTIONS · 80 SECONDS`}</div><Countdown deadline={state.deadline} /><div className="assignmentSplash"><b>{state.round === 3 ? "ALL" : state.matchups.length}</b><span>{state.round === 3 ? "PLAYERS · ONE SHARED CHALLENGE" : "HEAD-TO-HEAD MATCHUPS"}</span><p>{state.round === 3 ? "Every answer will compete in the medal vote." : "Each prompt is shared only with its two contestants."}</p></div><p>{new Set(state.answers.map(a => a.playerId)).size} of {state.players.filter(p => state.assignments[p.id]?.length).length} players answered</p><div className="progress"><i style={{width:`${state.players.length ? new Set(state.answers.map(a => a.playerId)).size/state.players.length*100 : 0}%`}} /></div><button className="secondary light" disabled={new Set(state.answers.map(a => a.playerId)).size < 2} onClick={() => onVote()}>START VOTING</button></section>}
-    {state.phase === "vote" && <section className="center round voteStage"><div className="eyebrow">{state.round === 3 ? "THE FINAL BLESSING · AWARD YOUR MEDALS" : `MATCHUP ${state.activeQuestion + 1} OF ${state.matchups.length} · 20 SECONDS TO VOTE`}</div><div className="voteTimer"><Countdown deadline={state.deadline} /></div><h2>{state.prompts[state.activeQuestion]}</h2><div className={`answerGrid ${state.round === 3 ? "finalAnswers" : ""}`}>{state.answers.filter(a=>a.question===state.activeQuestion).map(a => <div className="answerCard bounceIn" key={a.id}>{a.text}</div>)}</div><p>{Object.keys(state.votes).length} of {expectedVotes} {state.round === 3 ? "medals" : "eligible votes"} are in</p><div className="autoReveal">RESULTS REVEAL AUTOMATICALLY</div></section>}
-    {state.phase === "reveal" && <section className="center round revealStage"><Confetti /><div className="winnerBurst">{state.round === 3 ? "FINAL BLESSINGS!" : isUnanimous(state) ? "PERFECT PRAISE!" : "HOLY MOLY!"}</div><div className="eyebrow">{state.round === 3 ? "THE MEDALS ARE IN" : `MATCHUP ${state.activeQuestion + 1} OF ${state.matchups.length} · THE GOOD WORD GOES TO…`}</div><h2>{state.prompts[state.activeQuestion]}</h2><div className={`answerGrid ${state.round === 3 ? "finalAnswers" : ""}`}>{[...state.answers].filter(a=>a.question===state.activeQuestion).sort((a,b) => (state.lastPoints[b.id] || 0)-(state.lastPoints[a.id] || 0)).map((a,i) => <div className={`answerCard result ${i===0 ? "winner" : ""}`} key={a.id}><p>{a.text}</p><span>{BIBLE_BADGES[state.players.findIndex(p=>p.id===a.playerId)%BIBLE_BADGES.length]} {a.name}</span>{state.round < 3 && <small>{votePercent(state,a.id)}% of the vote</small>}<b>+<AnimatedNumber value={state.lastPoints[a.id] || 0} /> pts</b></div>)}</div><div className="autoReveal">{state.activeQuestion < state.matchups.length - 1 ? "NEXT MATCHUP IS COMING UP…" : "ROUND SCORES ARE COMING UP…"}</div></section>}
+    {state.phase === "vote" && <section className="center round voteStage"><div className="eyebrow">{state.round === 3 ? "THE FINAL BLESSING · AWARD YOUR MEDALS" : `MATCHUP ${state.activeQuestion + 1} OF ${state.matchups.length} · 20 SECONDS TO VOTE`}</div><div className="voteTimer"><Countdown deadline={state.deadline} /></div>{state.round === 3 ? <FinalPromptDisplay prompt={state.prompts[0]} /> : <h2>{state.prompts[state.activeQuestion]}</h2>}<div className={`answerGrid ${state.round === 3 ? "finalAnswers" : ""}`}>{state.answers.filter(a=>a.question===state.activeQuestion).map((a,i) => <div className="answerCard bounceIn" style={{animationDelay:`${i*.1}s`}} key={a.id}>{a.text}</div>)}</div><p>{Object.keys(state.votes).length} of {expectedVotes} {state.round === 3 ? "medals" : "eligible votes"} are in</p><div className="autoReveal">RESULTS REVEAL AUTOMATICALLY</div></section>}
+    {state.phase === "reveal" && <section className="center round revealStage"><Confetti /><div className="winnerBurst">{state.round === 3 ? "FINAL BLESSINGS!" : isUnanimous(state) ? "PERFECT PRAISE!" : "HOLY MOLY!"}</div><div className="eyebrow">{state.round === 3 ? "BRONZE · SILVER · GOLD" : `MATCHUP ${state.activeQuestion + 1} OF ${state.matchups.length} · THE GOOD WORD GOES TO…`}</div>{state.round === 3 ? <FinalPromptDisplay prompt={state.prompts[0]} /> : <h2>{state.prompts[state.activeQuestion]}</h2>}<div className={`answerGrid ${state.round === 3 ? "finalAnswers" : ""}`}>{[...state.answers].filter(a=>a.question===state.activeQuestion).sort((a,b) => (state.lastPoints[b.id] || 0)-(state.lastPoints[a.id] || 0)).map((a,i) => <div className={`answerCard result ${i===0 ? "winner" : ""}`} key={a.id}><p>{a.text}</p>{state.round === 3 ? <MedalWave ranks={state.lastMedals?.[a.id] || []} /> : <VoteTokens state={state} answerId={a.id} />}<span>{BIBLE_BADGES[state.players.findIndex(p=>p.id===a.playerId)%BIBLE_BADGES.length]} {a.name}</span>{state.round < 3 && <small>{votePercent(state,a.id)}% of the vote</small>}<b>+<AnimatedNumber value={state.lastPoints[a.id] || 0} delay={state.round === 3 ? 3000 : 900} /> pts</b></div>)}</div><div className="autoReveal">{state.activeQuestion < state.matchups.length - 1 ? "NEXT MATCHUP IS COMING UP…" : "ROUND SCORES ARE COMING UP…"}</div></section>}
     {state.phase === "scores" && <section className="center standings"><div className="eyebrow">ROUND {state.round} OF 3 COMPLETE</div><h2>Here’s where<br/><em>everybody stands.</em></h2><div className="leaderboard animatedBoard">{players.map((p,i) => <div key={p.id} style={{animationDelay:`${i*.12}s`}}><span>{BIBLE_BADGES[state.players.findIndex(x=>x.id===p.id)%BIBLE_BADGES.length]} {i+1}</span><b>{p.name}</b><strong><AnimatedNumber value={p.score} delay={i*120} /></strong></div>)}</div><div className="autoReveal">{state.round >= 3 ? "GRAND WINNER COMING UP…" : `ROUND ${state.round+1} IS COMING UP…`}</div></section>}
     {state.phase === "final" && <section className="center finalWinner"><Confetti /><div className="crown">♛</div><div className="eyebrow">THE GRAND WINNER</div><h2><em>{players[0]?.name || "Everybody"}</em></h2><p>{players[0]?.score || 0} glorious points</p><div className="leaderboard">{players.map((p,i) => <div key={p.id}><span>{i+1}</span><b>{p.name}</b><strong>{p.score}</strong></div>)}</div><button className="primary" onClick={() => location.reload()}>PLAY AGAIN <span>↻</span></button></section>}
     {state.phase === "vote-intro" && <VoteIntro announcer={state.announcer} />}
@@ -511,7 +512,36 @@ function FinalMedalVote({ state, me, onVote }: { state: GameState; me: string; o
   const picked = new Set(myVotes.map(([,answer]) => answer));
   const choices = state.answers.filter(a => a.question === state.activeQuestion && a.playerId !== me && !picked.has(a.id));
   if (!state.assignments[me]?.length) return <section><div className="bigIcon">👀</div><h2>Final round in progress</h2><p>You joined after it began. Watch the host screen for the winner.</p></section>;
-  return <section className="phoneVote finalMedalVote"><div className="voteNow">FINAL BLESSING!</div><div className="eyebrow">20 SECONDS · AWARD YOUR MEDALS</div><div className="voteTimer"><Countdown deadline={state.deadline} /></div><h2>{state.prompts[0]}</h2>{rank >= medalNames.length ? <><div className="bigIcon">✓</div><h3>Medals locked!</h3><p>Look up for the grand reveal.</p></> : <><div className="medalPrompt">Choose your {medalNames[rank]}</div><div className="voteList medalList">{choices.map(a => <button key={a.id} onClick={() => onVote(a.id, rank)}>{a.text}</button>)}</div></>}</section>;
+  return <section className="phoneVote finalMedalVote"><div className="voteNow">FINAL BLESSING!</div><div className="eyebrow">20 SECONDS · AWARD YOUR MEDALS</div><div className="voteTimer"><Countdown deadline={state.deadline} /></div><FinalPromptDisplay prompt={state.prompts[0]} compact />{rank >= medalNames.length ? <><div className="bigIcon">✓</div><h3>Medals locked!</h3><p>Look up for the grand reveal.</p></> : <><div className="medalPrompt">Choose your {medalNames[rank]}</div><div className="voteList medalList">{choices.map(a => <button key={a.id} onClick={() => onVote(a.id, rank)}>{a.text}</button>)}</div></>}</section>;
+}
+
+function FinalPromptDisplay({ prompt, compact = false }: { prompt: string; compact?: boolean }) {
+  const split = prompt.indexOf(":");
+  const kind = split > -1 ? prompt.slice(0, split) : "FINAL LASH";
+  const challenge = split > -1 ? prompt.slice(split + 1).trim() : prompt;
+  if (kind === "WORD LASH") {
+    const wordSplit = challenge.lastIndexOf(":");
+    const instruction = wordSplit > -1 ? challenge.slice(0, wordSplit) : challenge;
+    const word = wordSplit > -1 ? challenge.slice(wordSplit + 1).trim() : "SURPRISE";
+    return <div className={`finalPrompt wordLash ${compact ? "compactPrompt" : ""}`}><span>{kind}</span><p>{instruction}</p><strong>{word}</strong></div>;
+  }
+  if (kind === "ACRO LASH") {
+    const letters = (challenge.match(/[A-Z](?=\.|$)/g) || ["F","U","N"]);
+    return <div className={`finalPrompt acroLash ${compact ? "compactPrompt" : ""}`}><span>{kind}</span><p>Invent the funniest meaning for:</p><div>{letters.map((letter,i)=><b key={i}>{letter}</b>)}</div></div>;
+  }
+  const sceneIcons = ["🐿️","🐕","👽","🦸","🏴‍☠️","🤖","🦖","🛶"];
+  const icon = sceneIcons[prompt.length % sceneIcons.length];
+  return <div className={`finalPrompt comicLash ${compact ? "compactPrompt" : ""}`}><span>{kind}</span><div className="comicPanel"><i>{icon}</i><p>{challenge.replace(/____\.?$/, "")}</p><b>?</b></div></div>;
+}
+
+function VoteTokens({ state, answerId }: { state: GameState; answerId: string }) {
+  const voters = Object.entries(state.votes).filter(([,id]) => id === answerId).map(([key]) => key.split(":")[0]);
+  return <div className="voteTokens" aria-label={`${voters.length} votes`}>{voters.map((id,i) => { const playerIndex = state.players.findIndex(p => p.id === id); return <i key={`${id}-${i}`} style={{animationDelay:`${i*.18}s`}}>{BIBLE_BADGES[(playerIndex < 0 ? i : playerIndex)%BIBLE_BADGES.length]}</i>; })}</div>;
+}
+
+function MedalWave({ ranks }: { ranks: number[] }) {
+  const medals = ["🥇","🥈","🥉"];
+  return <div className="medalWave" aria-label={`${ranks.length} medals`}>{[...ranks].sort((a,b)=>b-a).map((rank,i)=><i key={`${rank}-${i}`} style={{animationDelay:`${(2-rank)*.8+i*.08}s`}}>{medals[rank]}</i>)}</div>;
 }
 
 function votePercent(state: GameState, answerId: string) {
