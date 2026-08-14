@@ -96,9 +96,34 @@ const PROMPT_TOPICS = [
   "Noah's ark", "the church potluck", "the youth room", "Sunday school", "the Garden of Eden", "the wilderness campout", "Bethlehem", "Jericho", "the disciples' group chat", "Daniel's lion den", "David's sheep pasture", "Jonah's boat ride", "the manna food truck", "the church nursery", "worship-band rehearsal", "the ark gift shop", "a Bible-times Olympics", "the wise men's road trip", "Zacchaeus's treehouse", "the camel parking lot", "the choir loft", "the fellowship hall", "the church bake sale", "a shepherd convention", "the Red Sea beach day", "the promised-land welcome center", "the church picnic", "a Bible-character talent show", "the Sunday-morning coffee line", "the volunteer appreciation dinner", "a biblical petting zoo", "the greatest church game night ever"
 ];
 
+const GENERAL_TOPICS = [
+  "the school cafeteria", "a family road trip", "the neighborhood block party", "a birthday party", "the grocery store", "a pet talent show", "the dentist's waiting room", "a camping trip", "the school bus", "a backyard barbecue", "a science fair", "the town parade", "a sleepover", "the local library", "a miniature golf course", "the zoo", "an amusement park", "a water park", "a cooking contest", "the lost-and-found", "a superhero headquarters", "a secret clubhouse", "a robot convention", "a pirate ship", "a space station", "the moon", "a time machine", "a haunted-but-friendly house", "a dragon's birthday", "a wizard school", "a fairy-tale castle", "a talking-animal town", "a snow day", "summer camp", "a family reunion", "a holiday dinner", "the first day of school", "picture day", "a spelling bee", "a school play", "a soccer game", "a bowling alley", "a skating rink", "a trampoline park", "a messy bedroom", "the kitchen at midnight", "a crowded elevator", "an airport", "a hotel breakfast", "a museum", "a toy store", "a candy factory", "a pizza restaurant", "an ice-cream truck", "a dog park", "a cat café", "a farm", "an underwater city", "a dinosaur theme park", "a cloud kingdom", "a tiny alien planet", "a video-game world", "a family game night", "the world's strangest office"
+];
+
+const GENERAL_PROMPT_TEMPLATES = [
+  "The worst thing to yell during {topic}: ____.", "A product nobody needs at {topic}: ____.",
+  "The title of a movie about {topic}: ____.", "A new flavor inspired by {topic}: ____.",
+  "The weirdest thing a tour guide could say at {topic}: ____.", "A terrible piece of advice for surviving {topic}: ____.",
+  "The number-one reason someone gets kicked out of {topic}: ____.", "A surprisingly useful superpower at {topic}: ____.",
+  "The most dramatic thing that could happen at {topic}: ____.", "A mystery smell discovered at {topic}: ____.",
+  "The name of a band formed at {topic}: ____.", "A ridiculous new world record set at {topic}: ____.",
+  "The last thing you want to hear at {topic}: ____.", "A secret menu item available only at {topic}: ____.",
+  "The oddest thing to bring home from {topic}: ____.", "A strange compliment someone might receive at {topic}: ____.",
+  "The worst name for a team from {topic}: ____.", "A rejected emoji representing {topic}: ____.",
+  "The plot twist nobody expected at {topic}: ____.", "The world's least convincing excuse for leaving {topic}: ____.",
+  "A new rule that would make {topic} much sillier: ____.", "The sound effect that should play during {topic}: ____.",
+  "A tiny villain whose evil plan involves {topic}: ____.", "The grand prize for winning at {topic}: ____.",
+  "What aliens would misunderstand about {topic}: ____.", "The first sentence in a children's book about {topic}: ____.",
+  "A headline nobody expected to read about {topic}: ____.", "The name of a perfume inspired by {topic}: ____.",
+  "A terrible thing to serve for lunch at {topic}: ____.", "A new dance craze that started at {topic}: ____.",
+  "The real reason everyone remembers {topic}: ____.", "A one-star review of {topic} would complain about: ____."
+];
+
 const PROMPT_LIBRARY = [
   ...ONE_ANSWER_PROMPTS,
   ...PROMPT_TEMPLATES.flatMap(template => PROMPT_TOPICS.map(topic => template.replace("{topic}", topic))),
+  ...PROMPT_TEMPLATES.flatMap(template => GENERAL_TOPICS.map(topic => template.replace("{topic}", topic))),
+  ...GENERAL_PROMPT_TEMPLATES.flatMap(template => GENERAL_TOPICS.map(topic => template.replace("{topic}", topic))),
 ];
 
 const BIBLE_ANNOUNCERS: Announcer[] = [
@@ -127,14 +152,36 @@ const FINAL_LASH_PROMPTS = [
   "COMIC LASH: David reaches into his bag and says to Goliath: ____.",
   "COMIC LASH: Jonah wakes up inside the fish and announces: ____.",
   "COMIC LASH: Moses sees the long wilderness road and says: ____.",
-  "COMIC LASH: Daniel enters the lions' den and whispers: ____."
+  "COMIC LASH: Daniel enters the lions' den and whispers: ____.",
+  "WORD LASH: Write a funny sentence containing the word 'spatula'.",
+  "WORD LASH: Write a funny sentence containing the word 'penguin'.",
+  "WORD LASH: Write a funny sentence containing the word 'homework'.",
+  "WORD LASH: Write a funny sentence containing the word 'mustache'.",
+  "WORD LASH: Write a funny sentence containing the word 'spaceship'.",
+  "WORD LASH: Write a funny sentence containing the word 'pancake'.",
+  "WORD LASH: Write a funny sentence containing the word 'sneakers'.",
+  "WORD LASH: Write a funny sentence containing the word 'pickle'.",
+  "ACRO LASH: What could P.E.T. stand for?",
+  "ACRO LASH: What could S.N.A.C.K. stand for?",
+  "ACRO LASH: What could S.C.H.O.O.L. stand for?",
+  "ACRO LASH: What could R.O.B.O.T. stand for?",
+  "ACRO LASH: What could P.I.Z.Z.A. stand for?",
+  "ACRO LASH: What could F.A.M.I.L.Y. stand for?",
+  "COMIC LASH: A squirrel opens a tiny briefcase and announces: ____.",
+  "COMIC LASH: The family dog walks into the kitchen wearing sunglasses and says: ____.",
+  "COMIC LASH: An alien tries pizza for the first time and declares: ____.",
+  "COMIC LASH: A superhero arrives thirty minutes late and explains: ____.",
+  "COMIC LASH: The principal opens the world's strangest lost-and-found box and says: ____.",
+  "COMIC LASH: A pirate discovers the treasure chest contains only: ____.",
+  "COMIC LASH: A robot attempts its first joke and says: ____.",
+  "COMIC LASH: A dinosaur cautiously enters a grocery store and asks: ____."
 ];
 
 const SAFETY_QUIPS = ["I was counting the camels.", "Ask me after the potluck.", "Manna made me do it.", "A very confused sheep.", "Insert joyful noise here.", "My answer is still wandering in the wilderness."];
 
 const COLORS = ["#ff6b5e", "#f3b43f", "#55c7a6", "#6f86ff", "#d36bec", "#ff8d4d"];
 const BIBLE_BADGES = ["🛶", "🐑", "🐟", "🕊️", "🌈", "⭐", "🪨", "🏺"];
-const GAME_VERSION = "2026.08.13.14";
+const GAME_VERSION = "2026.08.13.15";
 const clean = (value: string, max = 80) => value.replace(/[<>]/g, "").trim().slice(0, max);
 const makeRoom = () => Array.from({ length: 6 }, () => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 32)]).join("");
 const peerId = (room: string) => `amen-party-${room.toLowerCase()}`;
@@ -185,7 +232,7 @@ export default function Home() {
   useEffect(() => { if (state.phase === "prompt") { setAnswers(["", ""]); setSubmitted(false); setStatus(""); } }, [state.phase, state.round]);
   useEffect(() => {
     if (mode !== "host" || state.phase !== "countdown" || !state.deadline) return;
-    const timer = window.setTimeout(() => broadcast({ ...stateRef.current, phase: "prompt", deadline: Date.now() + (stateRef.current.round === 3 ? 45000 : 60000) }), Math.max(0, state.deadline - Date.now()));
+    const timer = window.setTimeout(() => broadcast({ ...stateRef.current, phase: "prompt", deadline: Date.now() + (stateRef.current.round === 3 ? 45000 : 80000) }), Math.max(0, state.deadline - Date.now()));
     return () => window.clearTimeout(timer);
   }, [mode, state.phase, state.deadline]);
   useEffect(() => {
@@ -419,7 +466,7 @@ function HostView({ state, players, status, onStart, onVote, onNext, onContinue 
   return <main className="game host"><header className="gameHeader"><div className="brand"><span className="spark">✦</span> GOOD WORD</div><div className="roomPill">JOIN AT THIS SITE · CODE <b>{state.room}</b></div></header>
     {state.phase === "lobby" && <section className="center"><div className="eyebrow">THE FLOCK IS GATHERING</div><h2>Room <em>{state.room}</em></h2><p>Players join with the room code and their name.</p><div className="playerGrid">{players.map((p,i) => <div className="playerChip" key={p.id} style={{"--chip":COLORS[i%COLORS.length]} as React.CSSProperties}><i>{BIBLE_BADGES[i%BIBLE_BADGES.length]}</i>{p.name}</div>)}{players.length === 0 && <div className="waiting">Waiting for the first player…</div>}</div><button className="primary" onClick={onStart}>START GAME <span>→</span></button>{status && <p className="status">{status}</p>}</section>}
     {state.phase === "countdown" && <section className="center bubblyTransition"><div className="bubble b1"/><div className="bubble b2"/><div className="bubble b3"/><div className="eyebrow">ROUND {state.round} IS BUBBLING UP</div><h2>Get ready!</h2><Countdown deadline={state.deadline} /></section>}
-    {state.phase === "prompt" && <section className="center round"><div className="eyebrow">{state.round === 3 ? "THE FINAL BLESSING · EVERYONE ANSWERS · 45 SECONDS" : `ROUND ${state.round} OF 3 · TWO QUESTIONS · 60 SECONDS`}</div><Countdown deadline={state.deadline} /><div className="assignmentSplash"><b>{state.round === 3 ? "ALL" : state.matchups.length}</b><span>{state.round === 3 ? "PLAYERS · ONE SHARED CHALLENGE" : "HEAD-TO-HEAD MATCHUPS"}</span><p>{state.round === 3 ? "Every answer will compete in the medal vote." : "Each prompt is shared only with its two contestants."}</p></div><p>{new Set(state.answers.map(a => a.playerId)).size} of {state.players.filter(p => state.assignments[p.id]?.length).length} players answered</p><div className="progress"><i style={{width:`${state.players.length ? new Set(state.answers.map(a => a.playerId)).size/state.players.length*100 : 0}%`}} /></div><button className="secondary light" disabled={new Set(state.answers.map(a => a.playerId)).size < 2} onClick={() => onVote()}>START VOTING</button></section>}
+    {state.phase === "prompt" && <section className="center round"><div className="eyebrow">{state.round === 3 ? "THE FINAL BLESSING · EVERYONE ANSWERS · 45 SECONDS" : `ROUND ${state.round} OF 3 · TWO QUESTIONS · 80 SECONDS`}</div><Countdown deadline={state.deadline} /><div className="assignmentSplash"><b>{state.round === 3 ? "ALL" : state.matchups.length}</b><span>{state.round === 3 ? "PLAYERS · ONE SHARED CHALLENGE" : "HEAD-TO-HEAD MATCHUPS"}</span><p>{state.round === 3 ? "Every answer will compete in the medal vote." : "Each prompt is shared only with its two contestants."}</p></div><p>{new Set(state.answers.map(a => a.playerId)).size} of {state.players.filter(p => state.assignments[p.id]?.length).length} players answered</p><div className="progress"><i style={{width:`${state.players.length ? new Set(state.answers.map(a => a.playerId)).size/state.players.length*100 : 0}%`}} /></div><button className="secondary light" disabled={new Set(state.answers.map(a => a.playerId)).size < 2} onClick={() => onVote()}>START VOTING</button></section>}
     {state.phase === "vote" && <section className="center round voteStage"><div className="eyebrow">{state.round === 3 ? "THE FINAL BLESSING · AWARD YOUR MEDALS" : `MATCHUP ${state.activeQuestion + 1} OF ${state.matchups.length} · 20 SECONDS TO VOTE`}</div><div className="voteTimer"><Countdown deadline={state.deadline} /></div><h2>{state.prompts[state.activeQuestion]}</h2><div className={`answerGrid ${state.round === 3 ? "finalAnswers" : ""}`}>{state.answers.filter(a=>a.question===state.activeQuestion).map(a => <div className="answerCard bounceIn" key={a.id}>{a.text}</div>)}</div><p>{Object.keys(state.votes).length} of {expectedVotes} {state.round === 3 ? "medals" : "eligible votes"} are in</p><div className="autoReveal">RESULTS REVEAL AUTOMATICALLY</div></section>}
     {state.phase === "reveal" && <section className="center round revealStage"><Confetti /><div className="winnerBurst">{state.round === 3 ? "FINAL BLESSINGS!" : isUnanimous(state) ? "PERFECT PRAISE!" : "HOLY MOLY!"}</div><div className="eyebrow">{state.round === 3 ? "THE MEDALS ARE IN" : `MATCHUP ${state.activeQuestion + 1} OF ${state.matchups.length} · THE GOOD WORD GOES TO…`}</div><h2>{state.prompts[state.activeQuestion]}</h2><div className={`answerGrid ${state.round === 3 ? "finalAnswers" : ""}`}>{[...state.answers].filter(a=>a.question===state.activeQuestion).sort((a,b) => (state.lastPoints[b.id] || 0)-(state.lastPoints[a.id] || 0)).map((a,i) => <div className={`answerCard result ${i===0 ? "winner" : ""}`} key={a.id}><p>{a.text}</p><span>{BIBLE_BADGES[state.players.findIndex(p=>p.id===a.playerId)%BIBLE_BADGES.length]} {a.name}</span>{state.round < 3 && <small>{votePercent(state,a.id)}% of the vote</small>}<b>+<AnimatedNumber value={state.lastPoints[a.id] || 0} /> pts</b></div>)}</div><div className="autoReveal">{state.activeQuestion < state.matchups.length - 1 ? "NEXT MATCHUP IS COMING UP…" : "ROUND SCORES ARE COMING UP…"}</div></section>}
     {state.phase === "scores" && <section className="center standings"><div className="eyebrow">ROUND {state.round} OF 3 COMPLETE</div><h2>Here’s where<br/><em>everybody stands.</em></h2><div className="leaderboard animatedBoard">{players.map((p,i) => <div key={p.id} style={{animationDelay:`${i*.12}s`}}><span>{BIBLE_BADGES[state.players.findIndex(x=>x.id===p.id)%BIBLE_BADGES.length]} {i+1}</span><b>{p.name}</b><strong><AnimatedNumber value={p.score} delay={i*120} /></strong></div>)}</div><div className="autoReveal">{state.round >= 3 ? "GRAND WINNER COMING UP…" : `ROUND ${state.round+1} IS COMING UP…`}</div></section>}
