@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 type Player = { id: string; name: string; score: number };
 type Answer = { id: string; playerId: string; name: string; text: string; question: number };
 type Matchup = { id: string; prompt: string; playerIds: string[] };
-type Phase = "home" | "lobby" | "prompt" | "vote" | "reveal" | "scores" | "final";
+type Phase = "home" | "lobby" | "countdown" | "prompt" | "vote" | "reveal" | "scores" | "final";
 type GameState = { phase: Phase; room: string; players: Player[]; round: number; prompts: string[]; matchups: Matchup[]; assignments: Record<string, number[]>; questionCount: 1 | 2; activeQuestion: number; answers: Answer[]; votes: Record<string, string>; deadline?: number };
 type PeerConnection = { peer: string; open: boolean; send: (data: unknown) => void; on: (event: string, cb: (data?: any) => void) => void; close: () => void };
 type PeerInstance = { id: string; on: (event: string, cb: (data?: any) => void) => void; connect: (id: string) => PeerConnection; destroy: () => void };
@@ -74,7 +74,7 @@ const ONE_ANSWER_PROMPTS = [
 
 const COLORS = ["#ff6b5e", "#f3b43f", "#55c7a6", "#6f86ff", "#d36bec", "#ff8d4d"];
 const BIBLE_BADGES = ["🛶", "🐑", "🐟", "🕊️", "🌈", "⭐", "🪨", "🏺"];
-const GAME_VERSION = "2026.08.13.10";
+const GAME_VERSION = "2026.08.13.11";
 const clean = (value: string, max = 80) => value.replace(/[<>]/g, "").trim().slice(0, max);
 const makeRoom = () => Array.from({ length: 6 }, () => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 32)]).join("");
 const peerId = (room: string) => `amen-party-${room.toLowerCase()}`;
@@ -122,7 +122,12 @@ export default function Home() {
   const stateRef = useRef(state);
   const playerId = useRef(crypto.randomUUID());
   useEffect(() => { stateRef.current = state; }, [state]);
-  useEffect(() => { if (state.phase === "prompt") { setAnswers(["", ""]); setSubmitted(false); setStatus(""); } }, [state.round]);
+  useEffect(() => { if (state.phase === "prompt") { setAnswers(["", ""]); setSubmitted(false); setStatus(""); } }, [state.phase, state.round]);
+  useEffect(() => {
+    if (mode !== "host" || state.phase !== "countdown" || !state.deadline) return;
+    const timer = window.setTimeout(() => broadcast({ ...stateRef.current, phase: "prompt", deadline: Date.now() + 60000 }), Math.max(0, state.deadline - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [mode, state.phase, state.deadline]);
   useEffect(() => {
     if (mode !== "host" || state.phase !== "prompt" || !state.deadline) return;
     const timer = window.setTimeout(() => beginVote(stateRef.current), Math.max(0, state.deadline - Date.now()));
@@ -225,23 +230,18 @@ export default function Home() {
   function startRound(source = stateRef.current) {
     if (source.players.length < 2) { setStatus("Invite at least 2 players to start."); return; }
     setStatus("");
-    const questionCount: 1 | 2 = Math.random() < 0.45 ? 1 : 2;
+    const questionCount: 1 | 2 = 2;
     const shuffled = [...source.players].sort(() => Math.random() - .5);
     const matchups: Matchup[] = [];
     const assignments: Record<string, number[]> = Object.fromEntries(source.players.map(p => [p.id, []]));
-    for (let wave = 0; wave < questionCount; wave++) {
-      const order = [...shuffled.slice(wave), ...shuffled.slice(0, wave)];
-      const groups: Player[][] = [];
-      for (let i = 0; i < order.length; i += 2) groups.push(order.slice(i, i + 2));
-      if (groups.length > 1 && groups.at(-1)?.length === 1) groups[0].push(groups.pop()![0]);
-      groups.forEach((group, groupIndex) => {
-        const promptIndex = (source.round * 17 + wave * 7 + groupIndex + Math.floor(Math.random() * ONE_ANSWER_PROMPTS.length)) % ONE_ANSWER_PROMPTS.length;
-        const matchupIndex = matchups.length;
-        matchups.push({ id: `${source.round + 1}-${wave}-${groupIndex}`, prompt: ONE_ANSWER_PROMPTS[promptIndex], playerIds: group.map(p => p.id) });
-        group.forEach(p => assignments[p.id].push(matchupIndex));
-      });
-    }
-    broadcast({ ...source, phase: "prompt", round: source.round + 1, prompts: matchups.map(m => m.prompt), matchups, assignments, questionCount, activeQuestion: 0, answers: [], votes: {}, deadline: Date.now() + (questionCount === 1 ? 45000 : 60000) });
+    shuffled.forEach((player, index) => {
+      const opponent = shuffled[(index + 1) % shuffled.length];
+      const promptIndex = (source.round * 17 + index * 7 + Math.floor(Math.random() * ONE_ANSWER_PROMPTS.length)) % ONE_ANSWER_PROMPTS.length;
+      matchups.push({ id: `${source.round + 1}-${index}`, prompt: ONE_ANSWER_PROMPTS[promptIndex], playerIds: [player.id, opponent.id] });
+      assignments[player.id].push(index);
+      assignments[opponent.id].push(index);
+    });
+    broadcast({ ...source, phase: "countdown", round: source.round + 1, prompts: matchups.map(m => m.prompt), matchups, assignments, questionCount, activeQuestion: 0, answers: [], votes: {}, deadline: Date.now() + 10000 });
   }
   function beginVote(source = stateRef.current) {
     if (source.phase !== "prompt") return;
@@ -290,6 +290,7 @@ function HostView({ state, players, status, onStart, onVote, onNext, onContinue 
   const expectedVotes = outsideVoters.length || state.players.length;
   return <main className="game host"><header className="gameHeader"><div className="brand"><span className="spark">✦</span> GOOD WORD</div><div className="roomPill">JOIN AT THIS SITE · CODE <b>{state.room}</b></div></header>
     {state.phase === "lobby" && <section className="center"><div className="eyebrow">THE FLOCK IS GATHERING</div><h2>Room <em>{state.room}</em></h2><p>Players join with the room code and their name.</p><div className="playerGrid">{players.map((p,i) => <div className="playerChip" key={p.id} style={{"--chip":COLORS[i%COLORS.length]} as React.CSSProperties}><i>{BIBLE_BADGES[i%BIBLE_BADGES.length]}</i>{p.name}</div>)}{players.length === 0 && <div className="waiting">Waiting for the first player…</div>}</div><button className="primary" onClick={onStart}>START GAME <span>→</span></button>{status && <p className="status">{status}</p>}</section>}
+    {state.phase === "countdown" && <section className="center bubblyTransition"><div className="bubble b1"/><div className="bubble b2"/><div className="bubble b3"/><div className="eyebrow">ROUND {state.round} IS BUBBLING UP</div><h2>Get ready!</h2><Countdown deadline={state.deadline} /></section>}
     {state.phase === "prompt" && <section className="center round"><div className="eyebrow">ROUND {state.round} OF 3 · {state.questionCount === 1 ? "ONE ASSIGNED QUESTION · 45 SECONDS" : "TWO ASSIGNED QUESTIONS · 60 SECONDS"}</div><Countdown deadline={state.deadline} /><div className="assignmentSplash"><b>{state.matchups.length}</b><span>HEAD-TO-HEAD MATCHUPS</span><p>Each prompt is shared only with its assigned contestants.</p></div><p>{new Set(state.answers.map(a => a.playerId)).size} of {state.players.filter(p => state.assignments[p.id]?.length).length} players answered</p><div className="progress"><i style={{width:`${state.players.length ? new Set(state.answers.map(a => a.playerId)).size/state.players.length*100 : 0}%`}} /></div><button className="secondary light" disabled={new Set(state.answers.map(a => a.playerId)).size < 2} onClick={() => onVote()}>START VOTING</button></section>}
     {state.phase === "vote" && <section className="center round voteStage"><div className="eyebrow">MATCHUP {state.activeQuestion + 1} OF {state.matchups.length} · VOTE FOR THE FUNNIEST</div><h2>{state.prompts[state.activeQuestion]}</h2><div className="answerGrid">{state.answers.filter(a=>a.question===state.activeQuestion).map(a => <div className="answerCard bounceIn" key={a.id}>{a.text}</div>)}</div><p>{Object.keys(state.votes).length} of {expectedVotes} eligible votes are in</p><div className="autoReveal">WINNER REVEALS AUTOMATICALLY</div></section>}
     {state.phase === "reveal" && <section className="center round revealStage"><Confetti /><div className="winnerBurst">HOLY MOLY!</div><div className="eyebrow">MATCHUP {state.activeQuestion + 1} OF {state.matchups.length} · THE GOOD WORD GOES TO…</div><h2>{state.prompts[state.activeQuestion]}</h2>{state.answers.filter(a=>a.question===state.activeQuestion).length < 2 ? <p>Not enough answers for this question.</p> : <div className="answerGrid">{[...state.answers].filter(a=>a.question===state.activeQuestion).sort((a,b) => Object.values(state.votes).filter(x=>x===b.id).length-Object.values(state.votes).filter(x=>x===a.id).length).map((a,i) => <div className={`answerCard result ${i===0 ? "winner" : ""}`} key={a.id}><p>{a.text}</p><span>{BIBLE_BADGES[state.players.findIndex(p=>p.id===a.playerId)%BIBLE_BADGES.length]} {a.name}</span><b>+<AnimatedNumber value={Object.values(state.votes).filter(x=>x===a.id).length * 100} /> pts</b></div>)}</div>}<button className="primary" onClick={onNext}>{state.activeQuestion < state.matchups.length - 1 ? "NEXT MATCHUP" : "SHOW ROUND SCORES"} <span>→</span></button></section>}
@@ -306,6 +307,7 @@ function PlayerView({ state, me, answers, setAnswers, submitted, voted, onAnswer
   const sittingOut = hasOutsideVoters && activeMatchup?.playerIds.includes(me);
   return <main className="phone"><header><div className="brand"><span className="spark">✦</span> GOOD WORD</div><span>{myName}</span></header>
     {state.phase === "lobby" && <section><div className="bigIcon">✓</div><h2>You’re in!</h2><p>Look up at the host screen. The game will begin soon.</p><div className="miniPlayers">{state.players.map((p,i) => <span key={p.id}>{BIBLE_BADGES[i%BIBLE_BADGES.length]} {p.name}</span>)}</div></section>}
+    {state.phase === "countdown" && <section className="bubblyTransition"><div className="bubble b1"/><div className="bubble b2"/><div className="bubble b3"/><div className="eyebrow">ROUND {state.round}</div><h2>Get ready!</h2><Countdown deadline={state.deadline} /></section>}
     {state.phase === "prompt" && <section><div className="eyebrow">ROUND {state.round} · {assigned.length === 1 ? "ONE QUESTION" : assigned.length === 2 ? "ANSWER BOTH" : "JOINED MID-ROUND"}</div><Countdown deadline={state.deadline} />{!assigned.length ? <><div className="bigIcon">👀</div><h3>You’re in!</h3><p>Vote this round. Your questions begin next round.</p></> : submitted ? <><div className="bigIcon">✦</div><h3>{assigned.length === 1 ? "Answer sent!" : "Both answers sent!"}</h3><p>Now prepare to defend your comedy honor.</p></> : <>{assigned.map((matchupIndex,i)=><div className="phonePrompt" key={matchupIndex}><span>YOUR QUESTION {i+1}</span><h3>{state.matchups[matchupIndex]?.prompt}</h3><textarea autoFocus={i===0} maxLength={100} value={answers[i]} onChange={e => { const next=[...answers]; next[i]=e.target.value; setAnswers(next); }} placeholder="Type something funny…"/><div className="count">{answers[i].length}/100</div></div>)}<button className="primary" disabled={answers.slice(0,assigned.length).some(a=>!a.trim())} onClick={onAnswer}>SEND {assigned.length === 1 ? "ANSWER" : "BOTH"} <span>→</span></button></>}</section>}
     {state.phase === "vote" && <section className="phoneVote"><div className="voteNow">{sittingOut ? "YOUR MATCHUP!" : "VOTE NOW!"}</div><div className="eyebrow">MATCHUP {state.activeQuestion + 1} OF {state.matchups.length}</div><h2>{state.prompts[state.activeQuestion]}</h2>{sittingOut ? <><div className="bigIcon">⚔</div><h3>You’re in this matchup</h3><p>Sit this vote out and watch the host screen.</p></> : voted ? <><div className="bigIcon">✓</div><h3>Vote locked!</h3><p>Watch the host screen for the winner.</p></> : <div className="voteList">{state.answers.filter(a=>a.question===state.activeQuestion).map(a => <button key={a.id} onClick={()=>onVote(a.id)}>{a.text}</button>)}</div>}</section>}
     {(state.phase === "reveal" || state.phase === "scores" || state.phase === "final") && <section><div className="bigIcon">✦</div><h2>{state.phase === "final" ? "Amen to that!" : state.phase === "scores" ? "Score check!" : "Results are in"}</h2><p>Look up at the host screen.</p><div className="myScore">YOUR SCORE <b>{state.players.find(p=>p.id===me)?.score || 0}</b></div></section>}
